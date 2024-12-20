@@ -1,7 +1,8 @@
 import os
-import pinecone
+from pinecone import Pinecone as PineconeClient, ServerlessSpec  
+from dotenv import load_dotenv
+from huggingface_hub import login
 import streamlit as st
-from langchain.llms import HuggingFaceHub
 from huggingface_hub import login
 import PyPDF2
 
