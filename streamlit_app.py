@@ -1,5 +1,5 @@
 import os
-from pinecone import Pinecone as PineconeClient, ServerlessSpec  
+from pinecone import Pinecone as PineconeClient
 from dotenv import load_dotenv
 from huggingface_hub import login
 import streamlit as st
