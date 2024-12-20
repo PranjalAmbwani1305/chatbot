@@ -1,13 +1,13 @@
 import os
-from pinecone import Pinecone as PineconeClient
-from dotenv import load_dotenv
-from huggingface_hub import login
+import pinecone
 import streamlit as st
+from langchain.llms import HuggingFaceHub
 from huggingface_hub import login
 import PyPDF2
 
-os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
-os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
+pinecone_api_key = os.getenv("PINECONE_API_KEY", "your-pinecone-api-key")
+pinecone_env = os.getenv("PINECONE_ENV", "us-east-1")
+pinecone.init(api_key=pinecone_api_key, environment=pinecone_env)
 
 st.set_page_config(page_title="Chatbot", page_icon="🤖")
 st.title("Chatbot using Hugging Face, Pinecone, and Langchain")
