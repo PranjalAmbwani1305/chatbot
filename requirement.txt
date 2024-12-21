@@ -1,5 +1,5 @@
 streamlit
-pinecone-client==2.0.0
-sentence-transformers==2.2.2
-pdfplumber==0.6.0
-openai==0.27.0
+pinecone-client
+sentence-transformers
+pdfplumber
+openai
