@@ -20,13 +20,30 @@ class CustomChatbot:
             text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
             self.docs = text_splitter.split_documents(documents)
             self.embeddings = HuggingFaceEmbeddings()
-            self.index_name = "chatbot"
+            self.index_name = "chatbot"  # Or use a more dynamic name if needed
             self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
-            if self.index_name not in self.pc.list_indexes():
+
+            try:
                 self.pc.create_index(
                     name=self.index_name, dimension=768, metric='cosine',
                     spec=ServerlessSpec(cloud='aws', region='us-east-1')
                 )
+                print(f"Index '{self.index_name}' created successfully.")
+            except pinecone.core.client.exceptions.ApiException as e:
+                if e.status == 409 and "Resource already exists" in e.body:
+                    try:
+                        existing_index = self.pc.describe_index(self.index_name)
+                        if existing_index.dimension == 768 and existing_index.metric == 'cosine':
+                            print(f"Index '{self.index_name}' already exists with the desired configuration. Skipping creation.")
+                        else:
+                            print(f"Index '{self.index_name}' exists but has a different configuration. Please delete it or use a different index name.")
+                            raise  # Re-raise to prevent initialization
+                    except Exception as describe_err:
+                        print(f"Error describing index: {describe_err}")
+                        raise  # Re-raise to prevent initialization
+                else:
+                    raise  # Re-raise other exceptions
+
             self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
             self.retriever = self.docsearch.as_retriever()
             self.llm = HuggingFaceEndpoint(
@@ -36,7 +53,7 @@ class CustomChatbot:
             )
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
-            raise
+            raise  # Important: re-raise the exception to stop execution
 
     def ask(self, question):
         try:
