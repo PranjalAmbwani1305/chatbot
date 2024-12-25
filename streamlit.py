@@ -6,6 +6,7 @@ from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Pinecone
 from langchain.chains import RetrievalQA
 from langchain.llms import HuggingFaceHub
+from sentence_transformers import SentenceTransformer
 import pinecone
 import os
 
