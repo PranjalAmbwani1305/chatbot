@@ -1,49 +1,117 @@
 import os
 import re
 import streamlit as st
-# ... (other imports)
+from langchain.prompts import PromptTemplate
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
+from langchain.text_splitter import CharacterTextSplitter
+from langchain_community.vectorstores import Pinecone
+from pinecone import Pinecone as PineconeClient, ServerlessSpec
+from dotenv import load_dotenv
 
-# ... (CustomChatbot class - as provided in my previous corrected answer)
+# Load environment variables
+load_dotenv()
+
+# Set up API keys from Streamlit secrets
+os.environ['HUGGINGFACE_API_KEY'] = st.secrets.get("HUGGINGFACE_API_KEY")
+os.environ['PINECONE_API_KEY'] = st.secrets.get("PINECONE_API_KEY")
+
+class CustomChatbot:
+    def __init__(self, pdf_path):
+        try:
+            loader = PyMuPDFLoader(pdf_path)
+            documents = loader.load()
+            text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
+            self.docs = text_splitter.split_documents(documents)
+            self.embeddings = HuggingFaceEmbeddings()
+            self.index_name = "chatbot"
+            self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
+
+            if self.index_name not in self.pc.list_indexes().names():
+                self.pc.create_index(
+                    name=self.index_name, dimension=768, metric='cosine',
+                    spec=ServerlessSpec(cloud='aws', region='us-east-1')
+                )
+            self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
+            self.retriever = self.docsearch.as_retriever()
+
+            self.llm = HuggingFaceEndpoint(
+                repo_id="distilbert-base-uncased-distilled-squad",
+                temperature=0.8, top_k=50,
+                huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
+            )
+
+        except Exception as e:
+            st.error(f"Error initializing chatbot: {e}")
+            raise
+
+    def ask(self, question):
+        try:
+            context = self.retriever.get_relevant_documents(question)
+            if not context:
+                return "No relevant context found for this question."
+
+            context_str = "\n".join([doc.page_content for doc in context])
+
+            inputs = {
+                "question": question,
+                "context": context_str
+            }
+            response = self.llm.invoke(inputs)
+            return response
+        except Exception as e:
+            st.error(f"Error during ask: {e}")
+            return f"Error processing your request: {e}"
 
 def clean_response_string(text):
-    # ... (no changes)
+    if isinstance(text, str):
+        return text.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
+    return ""
 
 def extract_text(data, path=""):
-    # ... (no changes)
+    if isinstance(data, str):
+        return clean_response_string(data)
+    elif isinstance(data, (dict, list)):
+        extracted_text = ""
+        if isinstance(data, dict):
+            items = data.items()
+        else:
+            items = enumerate(data)
+
+        for key, value in items:
+            current_path = f"{path}[{key}]" if path else str(key)
+            if isinstance(value, (str, dict, list)):
+                result = extract_text(value, current_path)
+                if result:
+                    st.write(f"Extracted from {current_path}: {result[:100]}...")
+                    extracted_text += result + "\n"
+        return extracted_text
+    return ""
 
 def generate_response(input_text):
     try:
-        bot = get_chatbot()  # Get the chatbot instance
-        if bot is None:  # Check if chatbot initialization was successful
+        bot = get_chatbot()
+        if bot is None:
             st.error("Chatbot initialization failed. Please check the logs.")
-            return "A problem occurred during chatbot initialization." # Return a string to avoid further errors
+            return "A problem occurred during chatbot initialization."
+
         response = bot.ask(input_text)
 
-        # ... (rest of the generate_response function - no changes)
-        return "\n\n".join(f"- {part}" for part in formatted_response)
+        st.write(f"Raw Response Type: {type(response)}")
+        st.write(f"Raw Response: {response}")
 
-    except Exception as e:
-        st.error(f"Error during response generation: {e}")
-        return f"Sorry, there was an error processing your request: {e}"
+        extracted_response = extract_text(response)
+        if not extracted_response.strip():
+            return "Could not extract any text from the model's response."
 
-@st.cache_resource
-def get_chatbot(pdf_path='gpmc.pdf'):
-    try:
-        return CustomChatbot(pdf_path=pdf_path)
-    except Exception as e:
-        st.error(f"Error creating chatbot: {e}")
-        return None  # VERY IMPORTANT: Return None if chatbot creation fails
+        response = extracted_response
 
-# Streamlit app
-# ... (rest of your Streamlit code)
+        response_parts = response.split("\n")
+        formatted_response =
+        current_part = ""
 
-if input_text := st.chat_input("Type your question here..."):
-    # ...
-    with st.chat_message("assistant"):
-        with st.spinner("Generating response..."):
-            response = generate_response(input_text)  # Call generate_response
-            if isinstance(response, str) and len(response) > 100:
-                st.markdown(response)
-            else:
-                st.write(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+        for part in response_parts:
+            if not part.strip():
+                continue
+
+            if re.match(r"^\d+\.", part.strip()) or re.match(r"^\d+$", part.strip()) or part.strip().startswith(("404
