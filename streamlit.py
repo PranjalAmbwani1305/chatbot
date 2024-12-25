@@ -9,8 +9,43 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-os.environ['HUGGINGFACE_API_KEY'] = st.secrets.get("HUGGINGFACE_API_KEY")
-os.environ['PINECONE_API_KEY'] = st.secrets.get("PINECONE_API_KEY")
+HUGGINGFACE_API_KEY = st.secrets.get("HUGGINGFACE_API_KEY")
+PINECONE_API_KEY = st.secrets.get("PINECONE_API_KEY")
+
+if not HUGGINGFACE_API_KEY:
+    st.error("Please set the HUGGINGFACE_API_KEY in your Streamlit secrets.")
+    st.stop()
+if not PINECONE_API_KEY:
+    st.error("Please set the PINECONE_API_KEY in your Streamlit secrets.")
+    st.stop()
+
+os.environ['HUGGINGFACE_API_KEY'] = HUGGINGFACE_API_KEY
+os.environ['PINECONE_API_KEY'] = PINECONE_API_KEY
+
+# Create Pinecone index OUTSIDE the cached function
+index_name = "chatbot"
+pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
+
+try:
+    pc.create_index(
+        name=index_name, dimension=768, metric='cosine',
+        spec=ServerlessSpec(cloud='aws', region='us-east-1')
+    )
+    print(f"Index '{index_name}' created successfully.")
+except pinecone.core.client.exceptions.ApiException as e:
+    if e.status == 409 and "Resource already exists" in e.body:
+        try:
+            existing_index = pc.describe_index(index_name)
+            if existing_index.dimension == 768 and existing_index.metric == 'cosine':
+                print(f"Index '{index_name}' already exists with the desired configuration. Skipping creation.")
+            else:
+                print(f"Index '{index_name}' exists but has a different configuration (dimension: {existing_index.dimension}, metric: {existing_index.metric}). Please delete it or use a different index name.")
+                st.stop()
+        except Exception as describe_err:
+            print(f"Error describing index: {describe_err}")
+            st.stop()
+    else:
+        raise  # Re-raise other exceptions
 
 class CustomChatbot:
     def __init__(self, pdf_path):
@@ -20,40 +55,18 @@ class CustomChatbot:
             text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
             self.docs = text_splitter.split_documents(documents)
             self.embeddings = HuggingFaceEmbeddings()
-            self.index_name = "chatbot"  # Or use a more dynamic name if needed
-            self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
-
-            try:
-                self.pc.create_index(
-                    name=self.index_name, dimension=768, metric='cosine',
-                    spec=ServerlessSpec(cloud='aws', region='us-east-1')
-                )
-                print(f"Index '{self.index_name}' created successfully.")
-            except pinecone.core.client.exceptions.ApiException as e:
-                if e.status == 409 and "Resource already exists" in e.body:
-                    try:
-                        existing_index = self.pc.describe_index(self.index_name)
-                        if existing_index.dimension == 768 and existing_index.metric == 'cosine':
-                            print(f"Index '{self.index_name}' already exists with the desired configuration. Skipping creation.")
-                        else:
-                            print(f"Index '{self.index_name}' exists but has a different configuration. Please delete it or use a different index name.")
-                            raise  # Re-raise to prevent initialization
-                    except Exception as describe_err:
-                        print(f"Error describing index: {describe_err}")
-                        raise  # Re-raise to prevent initialization
-                else:
-                    raise  # Re-raise other exceptions
-
+            self.index_name = index_name  # Use the globally defined index_name
+            self.pc = pc # Use globally defined pinecone client
             self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
             self.retriever = self.docsearch.as_retriever()
             self.llm = HuggingFaceEndpoint(
                 repo_id="distilbert-base-uncased-distilled-squad",
                 temperature=0.8, top_k=50,
-                huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
+                huggingfacehub_api_token=HUGGINGFACE_API_KEY # Use variable directly
             )
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
-            raise  # Important: re-raise the exception to stop execution
+            raise
 
     def ask(self, question):
         try:
