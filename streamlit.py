@@ -23,6 +23,7 @@ os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
 class CustomChatbot:
     def __init__(self, pdf_path):
+
         # Load PDF documents
         loader = PyMuPDFLoader(pdf_path)
         documents = loader.load()
@@ -37,7 +38,7 @@ class CustomChatbot:
         # Pinecone setup
         self.index_name = "chatbot"
         self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
-
+        
         # Create Pinecone index if it doesn't exist
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
@@ -82,33 +83,25 @@ class CustomChatbot:
 
         # Define the retrieval-augmented generation (RAG) chain
         self.rag_chain = (
-            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
+            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough() }
             | self.prompt
             | self.llm
             | StrOutputParser()
         )
 
     def ask(self, question):
-        # Ensure the input format is correct
-        context = self.docsearch.as_retriever()  # Retrieve context from documents
-        input_data = {"context": context, "question": question}
-        return self.rag_chain.invoke(input_data)
+        return self.rag_chain.invoke(question)
 
-# Helper function to process the response
-def process_response(response):
-    # If the response is a string, return it directly
-    if isinstance(response, str):
-        return response.strip()  # Just strip extra whitespace
-    
-    # If the response is a dictionary, extract the relevant text field
-    elif isinstance(response, dict):
-        # You can adjust this according to the structure of the dictionary
-        response_text = response.get('text', "Sorry, no text found in response.")
-        return response_text.strip()
-    
-    # If the response is neither a string nor a dictionary, handle the case
-    else:
-        return "Unexpected response type."
+
+# Streamlit setup
+st.set_page_config(page_title="Chatbot")
+st.title("Chatbot")
+
+# Cache the Chatbot instance to avoid reloading the model and data each time
+def get_chatbot(pdf_path='gpmc.pdf'):
+    # Initialize chatbot only once to avoid reloading large data
+    return CustomChatbot(pdf_path=pdf_path)
+
 
 # Function to generate response from the chatbot
 def generate_response(input_text):
@@ -116,22 +109,21 @@ def generate_response(input_text):
         bot = get_chatbot()  # Get or initialize the chatbot instance
         response = bot.ask(input_text)  # Get the response
 
-        # Process the response using the helper function
-        processed_response = process_response(response)
-        return processed_response
-
+        # Check if the response is a string before using replace()
+        if isinstance(response, str):
+            response = response.replace("\uf8e7", "").replace("\xad", "")
+            response = response.replace("\\n", "\n").replace("\t", " ")  # Clean newlines and tabs
+        elif isinstance(response, dict):
+            # If response is a dictionary, extract the relevant value (e.g., 'text' key)
+            response_text = response.get('text', "Sorry, no text found in response.")
+            st.write(f"Extracted Text from Dict: {response_text}")
+            response = response_text  # Set response to the extracted text
     except Exception as e:
         st.error(f"Error during response generation: {e}")
         return "Sorry, there was an error processing your request."
 
-# Cache the Chatbot instance to avoid reloading the model and data each time
-def get_chatbot(pdf_path='gpmc.pdf'):
-    # Initialize chatbot only once to avoid reloading large data
-    return CustomChatbot(pdf_path=pdf_path)
+    return response
 
-# Streamlit setup
-st.set_page_config(page_title="Chatbot")
-st.title("Chatbot")
 
 # Manage session state for chat messages
 if "messages" not in st.session_state:
@@ -151,16 +143,16 @@ if input_text := st.chat_input("Type your question here..."):
     with st.chat_message("user"):
         st.write(input_text)
 
-    # Generate assistant response
+    # Generate response
     with st.chat_message("assistant"):
         with st.spinner("Generating response..."):
-            response = generate_response(input_text)
+            response = generate_response(input_text)  # Get the response from the chatbot
 
-            # Display the response
+            # Display the formatted response
             if isinstance(response, str) and len(response) > 100:
-                st.markdown(response)  # Render response as markdown
+                st.markdown(response)  # Display the response as markdown if it's a long response
             else:
-                st.write(response)  # Render response as plain text
+                st.write(response)  # Display the response as plain text for shorter responses
 
         # Append assistant's response to session state
         st.session_state.messages.append({"role": "assistant", "content": response})
