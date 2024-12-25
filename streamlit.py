@@ -43,18 +43,6 @@ class CustomChatbot:
                 temperature=0.8, top_k=50,
                 huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
             )
-
-            template = """
-            You are a chatbot for answering questions about the specified document.
-            Answer these questions and explain the process step by step.
-            If you don't know the answer, just say "I don't know."
-
-            Context: {context}
-            Question: {question}
-            Answer:
-            """
-            self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
-            self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
             self.retriever = self.docsearch.as_retriever()
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
@@ -67,9 +55,14 @@ class CustomChatbot:
                 return "No relevant context found for this question."
 
             context_str = "\n".join([doc.page_content for doc in context])
-            formatted_prompt = self.prompt.format(context=context_str, question=question)
-            st.write(f"Formatted Prompt:\n{formatted_prompt}")  # Debugging
-            return self.llm.invoke(formatted_prompt)
+
+            inputs = {
+                "question": question,
+                "context": context_str
+            }
+            st.write(f"Inputs:\n{inputs}")  # Debugging: Print the inputs
+            response = self.llm.invoke(inputs)
+            return response
         except Exception as e:
             st.error(f"Error during ask: {e}")
             return f"Error processing your request: {e}"
