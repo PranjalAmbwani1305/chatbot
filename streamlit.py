@@ -1,35 +1,45 @@
-import streamlit as st
-import warnings
 import os
-from dotenv import load_dotenv
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.prompts import PromptTemplate
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
+from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
-from langchain.chains import RetrievalQA
-from langchain.llms import HuggingFaceHub
-from sentence_transformers import SentenceTransformer
-import pinecone
-import os
+from langchain.schema.runnable import RunnablePassthrough
+from langchain.schema.output_parser import StrOutputParser
+from pinecone import Pinecone as PineconeClient, ServerlessSpec
+from dotenv import load_dotenv
+import streamlit as st
+from huggingface_hub import login
 
-
-# Suppress warnings
-warnings.filterwarnings("ignore")
+# Log in to Hugging Face (use your actual token)
+login(token='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')
 
 # Load environment variables
 load_dotenv()
 
+# Set up API keys
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
 os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
+class CustomChatbot:
+    def __init__(self, pdf_path):
 
-# Pinecone index name
-index_name = "chatbot"  # Change this to your Pinecone index name
+        loader = PyMuPDFLoader(pdf_path) 
+        documents = loader.load()
+        
 
-  pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
-        # Create Pinecone index if it doesn't exist
-        if index_name not in .pc.list_indexes().names():
-            pc.create_index(
+        text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
+        self.docs = text_splitter.split_documents(documents)
+        
+
+        self.embeddings = HuggingFaceEmbeddings()
+      
+        self.index_name = "chatbot"
+        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
+        if self.index_name not in self.pc.list_indexes().names():
+            self.pc.create_index(
                 name=self.index_name,
-                dimension=768,  
+                dimension=348,  
                 metric='cosine',
                 spec=ServerlessSpec(
                     cloud='aws', 
@@ -37,57 +47,96 @@ index_name = "chatbot"  # Change this to your Pinecone index name
                 )
             )
 
-# Initialize embedding model
-embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+  
+        self.llm = HuggingFaceEndpoint(
+            repo_id="deepset/roberta-base-squad2", 
+            temperature=0.8, 
+            top_k=50, 
+            huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
+        )
 
-# Initialize Pinecone vector store
-vector_store = Pinecone(index_name=index_name, embedding_function=embedding_model.embed_query)
+     
+        template = """
+        You are a chatbot for answering questions about the specified document. 
+        Answer these questions and explain the process step by step.
+        If you don't know the answer, just say "I don't know."
 
-# Initialize HuggingFace LLM
-hf_hub_llm = HuggingFaceHub(
-    repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
-    model_kwargs={"temperature": 1, "max_new_tokens": 1024},
-)
+        Context: {context}
+        Question: {question}
+        Answer: 
+        """
+        self.prompt = PromptTemplate(
+            template=template, 
+            input_variables=["context", "question"]
+        )
 
-# Simplified Prompt Template (generic QA prompt)
-prompt_template = """
-Context: {context}
-Question: {question}
-Answer:
-"""
+        # Initialize Pinecone index with documents
+        self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
 
-# Set up the retrieval-based QA chain
-qa_chain = RetrievalQA.from_chain_type(
-    llm=hf_hub_llm,
-    chain_type="stuff",
-    retriever=vector_store.as_retriever(top_k=3),
-    chain_type_kwargs={"prompt": prompt_template},
-)
+        # Define the retrieval-augmented generation (RAG) chain
+        self.rag_chain = (
+            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
+            | self.prompt
+            | self.llm
+            | StrOutputParser()
+        )
 
-# Streamlit UI
-st.title("AI-Powered Knowledge Assistant")
+    def ask(self, question):
+        return self.rag_chain.invoke(question)
 
-# File Upload Section
-uploaded_file = st.file_uploader("Upload your PDF file for knowledge embedding", type="pdf")
-if uploaded_file:
-    from langchain.document_loaders import PyPDFLoader
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+
+st.set_page_config(page_title=" Chatbot")
+
+    st.title("Chatbot")
+
+# Cache the Chatbot instance
+@st.cache_resource
+def get_chatbot():
+    return CustomChatbot(pdf_path='gpmc.pdf')
+
+
+def generate_response(input_text):
+    bot = get_chatbot()
+    response = bot.ask(input_text)
+
+ 
+    if isinstance(response, str):
+        response = response.replace("\uf8e7", "").replace("\xad", "")
+        response = response.replace("\\n", "\n").replace("\t", " ")  
+
+        return response
     
-    with st.spinner("Processing your file..."):
-        # Load and split PDF
-        loader = PyPDFLoader(uploaded_file)
-        documents = loader.load()
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=300)
-        texts = text_splitter.split_documents(documents)
+    return response
 
-        # Add documents to Pinecone
-        vector_store.add_documents(documents=texts)
-        st.success("File successfully processed and added to the vector store!")
 
-# Query Section
-query = st.text_input("Enter your query:")
-if query:
-    with st.spinner("Fetching the response..."):
-        result = qa_chain.run(query)
-        st.write("### Answer:")
-        st.write(result)
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": " Ask me questions about the document."}
+    ]
+
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
+
+
+if input_text := st.chat_input("Type your question here..."):
+    # Append user message to session state
+    st.session_state.messages.append({"role": "user", "content": input_text})
+    with st.chat_message("user"):
+        st.write(input_text)
+
+   
+    with st.chat_message("assistant"):
+        with st.spinner("Generating response..."):
+            response = generate_response(input_text)
+
+      
+            if isinstance(response, str) and len(response) > 100:
+                st.markdown(response)
+            else:
+                st.write(response)
+
+        
+        st.session_state.messages.append({"role": "assistant", "content": response})
