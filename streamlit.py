@@ -87,8 +87,7 @@ class CustomChatbot:
 
 
 st.set_page_config(page_title=" Chatbot")
-
-    st.title("Chatbot")
+st.title("Chatbot")
 
 # Cache the Chatbot instance
 @st.cache_resource
