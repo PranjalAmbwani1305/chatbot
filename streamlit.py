@@ -53,7 +53,7 @@ class CustomChatbot:
 
         # Setup HuggingFace model for Q&A (using a transformer model like RoBERTa)
         self.llm = HuggingFaceEndpoint(
-            repo_id="deepset/roberta-base-squad2", 
+            repo_id="distilbert-base-uncased-distilled-squad", 
             temperature=0.8, 
             top_k=50, 
             huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
