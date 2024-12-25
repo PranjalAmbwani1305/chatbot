@@ -92,7 +92,10 @@ st.title("Chatbot")
 # Cache the chatbot instance
 @st.cache_resource
 def get_chatbot():
-    return CustomChatbot(pdf_path='chatbot/gpmc.pdf')
+    loader = PyMuPDFLoader('gpmc.pdf') 
+    documents = loader.load()
+
+    return CustomChatbot(pdf_path)
 
 
 def generate_response(input_text):
