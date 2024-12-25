@@ -98,9 +98,9 @@ st.set_page_config(page_title="Chatbot")
 st.title("Chatbot")
 
 # Cache the Chatbot instance to avoid reloading the model and data each time
-@st.cache_resource
-def get_chatbot():
-    return CustomChatbot(pdf_path='gpmc.pdf')
+def get_chatbot(pdf_path='gpmc.pdf'):
+    # Initialize chatbot only once to avoid reloading large data
+    return CustomChatbot(pdf_path=pdf_path)
 
 
 # Function to generate response from the chatbot
