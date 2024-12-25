@@ -97,7 +97,7 @@ class CustomChatbot:
 
 # Streamlit setup
 st.set_page_config(page_title="Chatbot")
-st.side.title("Chatbot")
+st.sidebar.title("Chatbot")
 
 # Cache the Chatbot instance to avoid reloading the model and data each time
 def get_chatbot(pdf_path='gpmc.pdf'):
