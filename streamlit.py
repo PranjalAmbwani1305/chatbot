@@ -3,7 +3,7 @@ import warnings
 import os
 from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
-rom langchain_community.vectorstores import Pinecone
+from langchain_community.vectorstores import Pinecone
 from langchain.chains import RetrievalQA
 from langchain.llms import HuggingFaceHub
 from sentence_transformers import SentenceTransformer
