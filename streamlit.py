@@ -55,7 +55,7 @@ class CustomChatbot:
             """
             self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
             self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
-            self.retriever = self.docsearch.as_retriever() #Store the retriever
+            self.retriever = self.docsearch.as_retriever()
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
             raise
@@ -68,11 +68,11 @@ class CustomChatbot:
 
             context_str = "\n".join([doc.page_content for doc in context])
             formatted_prompt = self.prompt.format(context=context_str, question=question)
-            st.write(f"Formatted Prompt:\n{formatted_prompt}")
+            st.write(f"Formatted Prompt:\n{formatted_prompt}")  # Debugging
             return self.llm.invoke(formatted_prompt)
         except Exception as e:
             st.error(f"Error during ask: {e}")
-            return f"Error processing your request: {e}" #Include the exception message
+            return f"Error processing your request: {e}"
 
 def clean_response_string(text):
     if isinstance(text, str):
@@ -80,7 +80,24 @@ def clean_response_string(text):
     return ""
 
 def extract_text(data, path=""):
-    # ... (extract_text function remains the same)
+    if isinstance(data, str):
+        return clean_response_string(data)
+    elif isinstance(data, (dict, list)):
+        extracted_text = ""
+        if isinstance(data, dict):
+            items = data.items()
+        else:
+            items = enumerate(data)
+
+        for key, value in items:
+            current_path = f"{path}[{key}]" if path else str(key)
+            if isinstance(value, (str, dict, list)):
+                result = extract_text(value,current_path)
+                if result:
+                    st.write(f"Extracted from {current_path}: {result[:100]}...")
+                    extracted_text += result + "\n"
+        return extracted_text
+    return ""
 
 def generate_response(input_text):
     try:
@@ -96,11 +113,55 @@ def generate_response(input_text):
         
         response = extracted_response
 
-        # ... (formatting logic remains the same)
+        response_parts = response.split("\n")
+        formatted_response = []
+        current_part = ""
+
+        for part in response_parts:
+            if not part.strip():
+                continue
+
+            if re.match(r"^\d+\.", part.strip()) or re.match(r"^\d+$", part.strip()) or part.strip().startswith(("404.", "405.")):
+                if current_part:
+                    formatted_response.append(current_part.strip())
+                current_part = f"{part.strip()} "
+            else:
+                current_part += part.strip() + " "
+
+        if current_part:
+            formatted_response.append(current_part.strip())
+
+        return "\n\n".join(f"- {part}" for part in formatted_response)
 
     except Exception as e:
         st.error(f"Error during response generation: {e}")
-        return f"Sorry, there was an error processing your request: {e}" #Include the exception message
+        return f"Sorry, there was an error processing your request: {e}"
 
 # Streamlit setup
-# ... (Streamlit app code remains the same)
+st.set_page_config(page_title="Chatbot")
+st.title("Chatbot")
+
+@st.cache_resource
+def get_chatbot(pdf_path='gpmc.pdf'):  # Replace 'gpmc.pdf' with your PDF file
+    return CustomChatbot(pdf_path=pdf_path)
+
+if "messages" not in st.session_state:
+    st.session_state.messages = [{"role": "assistant", "content": "Ask me questions about the document."}]
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
+
+if input_text := st.chat_input("Type your question here..."):
+    st.session_state.messages.append({"role": "user", "content": input_text})
+    with st.chat_message("user"):
+        st.write(input_text)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Generating response..."):
+            response = generate_response(input_text)
+            if isinstance(response, str) and len(response) > 100:
+                st.markdown(response)
+            else:
+                st.write(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
