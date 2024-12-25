@@ -12,8 +12,7 @@ from dotenv import load_dotenv
 import streamlit as st
 from huggingface_hub import login
 
-# Hugging Face login (replace with your token)
-login(token=st.secrets["HF_TOKEN"])
+login(token=st.secrets["HUGGINGFACE_TOKEN"])
 
 # Load environment variables
 load_dotenv()
