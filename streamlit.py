@@ -1,6 +1,5 @@
 import os
 import streamlit as st
-from langchain_core.prompts import PromptTemplate
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
 from langchain.text_splitter import CharacterTextSplitter
@@ -21,14 +20,21 @@ load_dotenv()
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
 os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
-
 class CustomChatbot:
     def __init__(self, pdf_path):
-
-        # Load document from PDF
-        loader = PyMuPDFLoader(pdf_path)
-        documents = loader.load()
-
+        # Verify the PDF file exists
+        if not os.path.exists(pdf_path):
+            st.error(f"PDF file not found: {pdf_path}")
+            return  # Exit if the file is not found
+        
+        try:
+            # Load document from PDF
+            loader = PyMuPDFLoader(pdf_path)
+            documents = loader.load()
+        except Exception as e:
+            st.error(f"Error loading the PDF document: {e}")
+            return
+        
         # Split document into smaller chunks
         text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
         self.docs = text_splitter.split_documents(documents)
@@ -89,14 +95,17 @@ class CustomChatbot:
 st.set_page_config(page_title="Chatbot")
 st.title("Chatbot")
 
-# Cache the chatbot instance
-@st.cache_resource
+# Initialize the chatbot directly in the function without caching
 def get_chatbot():
-    return CustomChatbot(pdf_path)
+    pdf_path = 'gpmc.pdf'  # Ensure this path is correct
+    return CustomChatbot(pdf_path=pdf_path)
 
 
 def generate_response(input_text):
-    bot = get_chatbot()
+    bot = get_chatbot()  # Initialize a new chatbot instance each time
+    if bot is None:
+        return "Error loading chatbot."
+    
     response = bot.ask(input_text)
 
     # Clean up and format the response
@@ -138,4 +147,3 @@ if input_text := st.chat_input("Type your question here..."):
 
         # Append the assistant's response to session state
         st.session_state.messages.append({"role": "assistant", "content": response})
-
