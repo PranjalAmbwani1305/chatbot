@@ -6,6 +6,11 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
 from pinecone import Pinecone as PineconeClient, ServerlessSpec
 from dotenv import load_dotenv
+from huggingface_hub import login
+
+
+
+login(token='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')
 
 load_dotenv()
 
@@ -22,9 +27,8 @@ if not PINECONE_API_KEY:
 os.environ['HUGGINGFACE_API_KEY'] = HUGGINGFACE_API_KEY
 os.environ['PINECONE_API_KEY'] = PINECONE_API_KEY
 
-# Create Pinecone index OUTSIDE the cached function
 index_name = "chatbot"
-pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
+pc = PineconeClient(api_key=PINECONE_API_KEY)  # Use the key directly
 
 try:
     pc.create_index(
@@ -33,7 +37,7 @@ try:
     )
     print(f"Index '{index_name}' created successfully.")
 except pinecone.core.client.exceptions.ApiException as e:
-    if e.status == 409 and "Resource already exists" in e.body:
+    if e.status == 409 and "Resource already exists" in str(e): #check the string of the error
         try:
             existing_index = pc.describe_index(index_name)
             if existing_index.dimension == 768 and existing_index.metric == 'cosine':
@@ -45,7 +49,8 @@ except pinecone.core.client.exceptions.ApiException as e:
             print(f"Error describing index: {describe_err}")
             st.stop()
     else:
-        raise  # Re-raise other exceptions
+        print(f"Pinecone API Error: {e}") #print the error for debugging
+        st.stop()
 
 class CustomChatbot:
     def __init__(self, pdf_path):
@@ -55,14 +60,14 @@ class CustomChatbot:
             text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
             self.docs = text_splitter.split_documents(documents)
             self.embeddings = HuggingFaceEmbeddings()
-            self.index_name = index_name  # Use the globally defined index_name
-            self.pc = pc # Use globally defined pinecone client
+            self.index_name = index_name
+            self.pc = pc
             self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
             self.retriever = self.docsearch.as_retriever()
             self.llm = HuggingFaceEndpoint(
                 repo_id="distilbert-base-uncased-distilled-squad",
                 temperature=0.8, top_k=50,
-                huggingfacehub_api_token=HUGGINGFACE_API_KEY # Use variable directly
+                huggingfacehub_api_token=HUGGINGFACE_API_KEY
             )
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
