@@ -6,6 +6,7 @@ from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
+from langchain.schema.runnable import RunnablePassthrough
 from pinecone import Pinecone as PineconeClient, ServerlessSpec
 from dotenv import load_dotenv
 
@@ -13,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Set up API keys from Streamlit secrets
-os.environ['HUGGINGFACE_API_KEY'] = st.secrets.get("HUGGINGFACE_API_KEY")
+os.environ['HUGGINGFACE_API_KEY'] = st.secrets.get("HUGGINGFACE_API_KEY") # Use .get to avoid KeyError
 os.environ['PINECONE_API_KEY'] = st.secrets.get("PINECONE_API_KEY")
 
 class CustomChatbot:
@@ -32,6 +33,7 @@ class CustomChatbot:
                     name=self.index_name, dimension=768, metric='cosine',
                     spec=ServerlessSpec(cloud='aws', region='us-east-1')
                 )
+            # THIS IS THE KEY CHANGE: Connect to the Pinecone index as a vectorstore
             self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
             self.retriever = self.docsearch.as_retriever()
 
@@ -43,7 +45,7 @@ class CustomChatbot:
 
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
-            raise
+            raise  # Re-raise the exception after logging it in Streamlit
 
     def ask(self, question):
         try:
@@ -57,61 +59,49 @@ class CustomChatbot:
                 "question": question,
                 "context": context_str
             }
+            #st.write(f"Inputs:\n{inputs}")  # Debugging: Print the inputs
             response = self.llm.invoke(inputs)
             return response
         except Exception as e:
             st.error(f"Error during ask: {e}")
             return f"Error processing your request: {e}"
 
-def clean_response_string(text):
-    if isinstance(text, str):
-        return text.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
-    return ""
+# ... (rest of the helper functions: clean_response_string, extract_text, generate_response)
 
-def extract_text(data, path=""):
-    if isinstance(data, str):
-        return clean_response_string(data)
-    elif isinstance(data, (dict, list)):
-        extracted_text = ""
-        if isinstance(data, dict):
-            items = data.items()
-        else:
-            items = enumerate(data)
+# Streamlit setup
+st.set_page_config(page_title="Chatbot")
+st.title("Chatbot")
 
-        for key, value in items:
-            current_path = f"{path}[{key}]" if path else str(key)
-            if isinstance(value, (str, dict, list)):
-                result = extract_text(value, current_path)
-                if result:
-                    st.write(f"Extracted from {current_path}: {result[:100]}...")
-                    extracted_text += result + "\n"
-        return extracted_text
-    return ""
-
-def generate_response(input_text):
+@st.cache_resource
+def get_chatbot(pdf_path='gpmc.pdf'):
     try:
-        bot = get_chatbot()
-        if bot is None:
-            st.error("Chatbot initialization failed. Please check the logs.")
-            return "A problem occurred during chatbot initialization."
+        return CustomChatbot(pdf_path=pdf_path)
+    except Exception as e:
+        st.error(f"Error creating chatbot: {e}")
+        return None  # Return None if chatbot creation fails
 
-        response = bot.ask(input_text)
+if "messages" not in st.session_state:
+    st.session_state.messages = [{"role": "assistant", "content": "Ask me questions about the document."}]
 
-        st.write(f"Raw Response Type: {type(response)}")
-        st.write(f"Raw Response: {response}")
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
 
-        extracted_response = extract_text(response)
-        if not extracted_response.strip():
-            return "Could not extract any text from the model's response."
+if input_text := st.chat_input("Type your question here..."):
+    st.session_state.messages.append({"role": "user", "content": input_text})
+    with st.chat_message("user"):
+        st.write(input_text)
 
-        response = extracted_response
-
-        response_parts = response.split("\n")
-        formatted_response =
-        current_part = ""
-
-        for part in response_parts:
-            if not part.strip():
-                continue
-
-            if re.match(r"^\d+\.", part.strip()) or re.match(r"^\d+$", part.strip()) or part.strip().startswith(("404
+    with st.chat_message("assistant"):
+        with st.spinner("Generating response..."):
+            chatbot = get_chatbot() # Get the chatbot from the cache
+            if chatbot: # Only proceed if chatbot creation was successful
+                response = generate_response(input_text)
+                if isinstance(response, str) and len(response) > 100:
+                    st.markdown(response)
+                else:
+                    st.write(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+            else:
+                st.error("Failed to initialize the chatbot. Please check the logs.")
+                st.stop() # Stop execution if the chatbot isn't created.
