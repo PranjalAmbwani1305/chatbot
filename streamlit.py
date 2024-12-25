@@ -1,127 +1,111 @@
 import os
-import re
-import pinecone
 import streamlit as st
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
-from langchain.schema.runnable import RunnablePassthrough
-from langchain.schema.output_parser import StrOutputParser
-from pinecone import PineconeClient, ServerlessSpec
+from pinecone import Pinecone as PineconeClient, ServerlessSpec
 from dotenv import load_dotenv
-from huggingface_hub import login
 
-# Streamlit secrets and environment variables
-HUGGINGFACE_API_KEY = st.secrets.get("HUGGINGFACE_API_KEY")
-PINECONE_API_KEY = st.secrets.get("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = st.secrets.get("PINECONE_ENVIRONMENT")
+load_dotenv()
 
-if not all([HUGGINGFACE_API_KEY, PINECONE_API_KEY, PINECONE_ENVIRONMENT]):
-    st.error("Please set all API keys and environment in Streamlit secrets.")
-    st.stop()
+os.environ['HUGGINGFACE_API_KEY'] = st.secrets.get("HUGGINGFACE_API_KEY")
+os.environ['PINECONE_API_KEY'] = st.secrets.get("PINECONE_API_KEY")
 
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = HUGGINGFACE_API_KEY
-os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
-
-# Hugging Face Login (only if needed for private models)
-try:
-    login(token=HUGGINGFACE_API_KEY)  # Try logging in, but don't crash if it fails
-except Exception as e:
-    st.warning(f"Hugging Face login failed (this might be okay): {e}")
-
-class Chatbot:
-    def __init__(self, pdf_path="gpmc.pdf"): # Added default pdf_path
+class CustomChatbot:
+    def __init__(self, pdf_path):
         try:
             loader = PyMuPDFLoader(pdf_path)
             documents = loader.load()
-            text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200) # Smaller chunks
+            text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
             self.docs = text_splitter.split_documents(documents)
             self.embeddings = HuggingFaceEmbeddings()
-            self.index_name = "amcgpmc"
-            self.pc = PineconeClient(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+            self.index_name = "chatbot"  # Or use a more dynamic name if needed
+            self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
 
-            if self.index_name not in self.pc.list_indexes():
+            try:
                 self.pc.create_index(
                     name=self.index_name, dimension=768, metric='cosine',
-                    spec=ServerlessSpec(cloud='aws', region='us-east-1') #Check your region
+                    spec=ServerlessSpec(cloud='aws', region='us-east-1')
                 )
+                print(f"Index '{self.index_name}' created successfully.")
+            except pinecone.core.client.exceptions.ApiException as e:
+                if e.status == 409 and "Resource already exists" in e.body:
+                    try:
+                        existing_index = self.pc.describe_index(self.index_name)
+                        if existing_index.dimension == 768 and existing_index.metric == 'cosine':
+                            print(f"Index '{self.index_name}' already exists with the desired configuration. Skipping creation.")
+                        else:
+                            print(f"Index '{self.index_name}' exists but has a different configuration. Please delete it or use a different index name.")
+                            raise  # Re-raise to prevent initialization
+                    except Exception as describe_err:
+                        print(f"Error describing index: {describe_err}")
+                        raise  # Re-raise to prevent initialization
+                else:
+                    raise  # Re-raise other exceptions
 
             self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
-            self.retriever = self.docsearch.as_retriever(search_kwargs={"k": 3}) # Limit retrieved docs
-
+            self.retriever = self.docsearch.as_retriever()
             self.llm = HuggingFaceEndpoint(
-                repo_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
-                temperature=0.7, # Adjusted temperature
-                top_k=50,
+                repo_id="distilbert-base-uncased-distilled-squad",
+                temperature=0.8, top_k=50,
+                huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
             )
-
-            template = """
-            You are a helpful chatbot for the Ahmedabad Government Corporation (AMC). 
-            Answer questions about the GPMC act in a clear and concise manner, providing step-by-step instructions where appropriate.
-            If you don't know the answer based on the provided context, say "I'm sorry, I couldn't find information about that in the provided document."
-
-            Context: {context}
-            Question: {question}
-            Answer:
-            """
-            self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
-
-            self.rag_chain = (
-                {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
-                | self.prompt
-                | self.llm
-                | StrOutputParser()
-            )
-
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
-            raise # Important to re-raise so Streamlit catches the error
+            raise  # Important: re-raise the exception to stop execution
 
     def ask(self, question):
         try:
-            return self.rag_chain.invoke(question)
+            context = self.retriever.get_relevant_documents(question)
+            if not context:
+                return "No relevant context found for this question."
+            context_str = "\n".join([doc.page_content for doc in context])
+            inputs = {
+                "question": question,
+                "context": context_str
+            }
+            response = self.llm.invoke(inputs)
+            return response
         except Exception as e:
-            st.error(f"Error during query: {e}")
-            return "An error occurred while processing your request."
-
-# Streamlit app
-st.set_page_config(page_title="GPMC Chatbot")
-st.title("GPMC Act Chatbot")
+            st.error(f"Error during ask: {e}")
+            return f"Error processing your request: {e}"
 
 @st.cache_resource
-def get_chatbot(pdf_path):
+def get_chatbot(pdf_path='gpmc.pdf'):
     try:
-        return Chatbot(pdf_path)
+        return CustomChatbot(pdf_path=pdf_path)
     except Exception as e:
         st.error(f"Error creating chatbot: {e}")
         return None
 
+def generate_response(input_text):
+    chatbot = get_chatbot()
+    if chatbot:
+        return chatbot.ask(input_text)
+    else:
+        return "Failed to initialize the chatbot. Please check the logs."
+
+st.set_page_config(page_title="Chatbot")
+st.title("Chatbot")
+
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Welcome! Ask me questions about the GPMC Act."}]
-
-pdf_path = st.file_uploader("Upload PDF", type="pdf")
-
-if pdf_path:
-    chatbot = get_chatbot(pdf_path)
-else:
-    st.info("Please upload a PDF document to begin.")
-    st.stop()
+    st.session_state.messages = [{"role": "assistant", "content": "Ask me questions about the document."}]
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-if user_input := st.chat_input("Your question:"):
-    st.session_state.messages.append({"role": "user", "content": user_input})
+if input_text := st.chat_input("Type your question here..."):
+    st.session_state.messages.append({"role": "user", "content": input_text})
     with st.chat_message("user"):
-        st.write(user_input)
+        st.write(input_text)
 
     with st.chat_message("assistant"):
         with st.spinner("Generating response..."):
-            if chatbot: #Check if the chatbot was initialized successfully
-                response = chatbot.ask(user_input)
-                st.write(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+            response = generate_response(input_text)
+            if isinstance(response, str) and len(response) > 100:
+                st.markdown(response)
             else:
-                st.error("Chatbot initialization failed. Please try again.")
+                st.write(response)
+            st.session_state.messages.append({"role": "assistant", "content": response})
