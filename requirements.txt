@@ -5,5 +5,5 @@ pinecone-client
 python-dotenv
 sentence-transformers
 PyPDF2
-langchain_huggingface
+langchain-huggingface
 PyMuPDF
