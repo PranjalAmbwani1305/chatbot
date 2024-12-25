@@ -2,7 +2,7 @@ import streamlit as st
 import warnings
 import os
 from dotenv import load_dotenv
-from langchain.embeddings.huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.vectorstores import Pinecone
 from langchain.chains import RetrievalQA
 from langchain.llms import HuggingFaceHub
