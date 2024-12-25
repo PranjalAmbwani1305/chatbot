@@ -19,7 +19,7 @@ PINECONE_ENVIRONMENT = "us-east-1"  # Replace with your Pinecone environment
 
 # Initialize Pinecone
 pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-index_name = "pdf-retrieval-index"
+index_name = "chatbot"
 
 # Create or connect to Pinecone index
 if index_name not in pinecone.list_indexes():
