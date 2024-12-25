@@ -37,7 +37,7 @@ class CustomChatbot:
         # Pinecone setup
         self.index_name = "chatbot"
         self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
-
+        
         # Create Pinecone index if it doesn't exist
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
@@ -89,7 +89,10 @@ class CustomChatbot:
         )
 
     def ask(self, question):
-        return self.rag_chain.invoke(question)
+        # Ensure input is formatted correctly as a dictionary
+        context = self.docsearch.as_retriever()  # Get relevant context from Pinecone
+        inputs = {"context": context, "question": question}
+        return self.rag_chain.invoke(inputs)
 
 # Streamlit setup
 st.set_page_config(page_title="Chatbot")
@@ -104,26 +107,22 @@ def get_chatbot(pdf_path='gpmc.pdf'):
 def generate_response(input_text):
     try:
         bot = get_chatbot()  # Get or initialize the chatbot instance
-        response = bot.ask(input_text)  # Get the response
+        response = bot.ask(input_text)  # Get the response from the chatbot
 
-        # Debug: Log the response type and content
-        st.write(f"Response Type: {type(response)}")
-        st.write(f"Response Content: {response}")
-
-        # Check if the response is a string before using replace()
+        # Handle response formatting
         if isinstance(response, str):
             response = response.replace("\uf8e7", "").replace("\xad", "")
             response = response.replace("\\n", "\n").replace("\t", " ")  # Clean newlines and tabs
         elif isinstance(response, dict):
             # If response is a dictionary, extract the relevant value (e.g., 'text' key)
             response_text = response.get('text', "Sorry, no text found in response.")
-            st.write(f"Extracted Text from Dict: {response_text}")
             response = response_text  # Set response to the extracted text
-
-        return response
     except Exception as e:
         st.error(f"Error during response generation: {e}")
         return "Sorry, there was an error processing your request."
+
+    return response
+
 
 # Manage session state for chat messages
 if "messages" not in st.session_state:
@@ -148,11 +147,11 @@ if input_text := st.chat_input("Type your question here..."):
         with st.spinner("Generating response..."):
             response = generate_response(input_text)
 
-            # Display the response
+            # Display the formatted response
             if isinstance(response, str) and len(response) > 100:
-                st.markdown(response)  # Render response as markdown
+                st.markdown(response)
             else:
-                st.write(response)  # Render response as plain text
+                st.write(response)
 
         # Append assistant's response to session state
         st.session_state.messages.append({"role": "assistant", "content": response})
