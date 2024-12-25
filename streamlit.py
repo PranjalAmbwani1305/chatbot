@@ -112,16 +112,18 @@ def generate_response(input_text):
         bot = get_chatbot()  # Get or initialize the chatbot instance
         response = bot.ask(input_text)  # Get the response
 
-        # Clean response
+        # Check if the response is a string before using replace()
         if isinstance(response, str):
             response = response.replace("\uf8e7", "").replace("\xad", "")
             response = response.replace("\\n", "\n").replace("\t", " ")  # Clean newlines and tabs
-            return response
+        elif isinstance(response, dict):
+            # If response is a dictionary, extract the relevant value (e.g., 'text' key)
+            response = response.get('text', "Sorry, no text found in response.")
+
+        return response
     except Exception as e:
         st.error(f"Error during response generation: {e}")
         return "Sorry, there was an error processing your request."
-
-    return response
 
 
 # Manage session
