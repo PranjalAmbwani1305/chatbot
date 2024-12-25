@@ -1,0 +1,6 @@
+streamlit
+langchain
+pinecone-client
+python-dotenv
+sentence-transformers
+PyPDF2
