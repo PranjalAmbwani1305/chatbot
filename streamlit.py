@@ -15,7 +15,7 @@ import pinecone
 load_dotenv()
 os.environ['HUGGINGFACEHUB_API_TOKEN'] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = "us-west1-gcp"  # Replace with your Pinecone environment
+PINECONE_ENVIRONMENT = "us-east-1"  # Replace with your Pinecone environment
 
 # Initialize Pinecone
 pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
@@ -34,7 +34,7 @@ hf_embeddings = HuggingFaceBgeEmbeddings(
 )
 
 # PyPDFLoader
-Pdfloader = PyPDFLoader("TL.pdf")  # Replace with your PDF file path
+Pdfloader = PyPDFLoader("gpmc.pdf")  # Replace with your PDF file path
 Pdfdocuments = Pdfloader.load()
 Pdf_text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 final_documents = Pdf_text_splitter.split_documents(Pdfdocuments)
