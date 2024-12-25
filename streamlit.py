@@ -1,5 +1,7 @@
 import os
+import re
 import streamlit as st
+from langchain.prompts import PromptTemplate
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
 from langchain.text_splitter import CharacterTextSplitter
@@ -7,8 +9,10 @@ from langchain_community.vectorstores import Pinecone
 from pinecone import Pinecone as PineconeClient, ServerlessSpec
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 
+# Set up API keys from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets.get("HUGGINGFACE_API_KEY")
 os.environ['PINECONE_API_KEY'] = st.secrets.get("PINECONE_API_KEY")
 
@@ -20,47 +24,35 @@ class CustomChatbot:
             text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
             self.docs = text_splitter.split_documents(documents)
             self.embeddings = HuggingFaceEmbeddings()
-            self.index_name = "chatbot"  # Or use a more dynamic name if needed
+            self.index_name = "chatbot"
             self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
 
-            try:
+            if self.index_name not in self.pc.list_indexes().names():
                 self.pc.create_index(
                     name=self.index_name, dimension=768, metric='cosine',
                     spec=ServerlessSpec(cloud='aws', region='us-east-1')
                 )
-                print(f"Index '{self.index_name}' created successfully.")
-            except pinecone.core.client.exceptions.ApiException as e:
-                if e.status == 409 and "Resource already exists" in e.body:
-                    try:
-                        existing_index = self.pc.describe_index(self.index_name)
-                        if existing_index.dimension == 768 and existing_index.metric == 'cosine':
-                            print(f"Index '{self.index_name}' already exists with the desired configuration. Skipping creation.")
-                        else:
-                            print(f"Index '{self.index_name}' exists but has a different configuration. Please delete it or use a different index name.")
-                            raise  # Re-raise to prevent initialization
-                    except Exception as describe_err:
-                        print(f"Error describing index: {describe_err}")
-                        raise  # Re-raise to prevent initialization
-                else:
-                    raise  # Re-raise other exceptions
-
             self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
             self.retriever = self.docsearch.as_retriever()
+
             self.llm = HuggingFaceEndpoint(
                 repo_id="distilbert-base-uncased-distilled-squad",
                 temperature=0.8, top_k=50,
                 huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
             )
+
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
-            raise  # Important: re-raise the exception to stop execution
+            raise
 
     def ask(self, question):
         try:
             context = self.retriever.get_relevant_documents(question)
             if not context:
                 return "No relevant context found for this question."
+
             context_str = "\n".join([doc.page_content for doc in context])
+
             inputs = {
                 "question": question,
                 "context": context_str
@@ -71,6 +63,73 @@ class CustomChatbot:
             st.error(f"Error during ask: {e}")
             return f"Error processing your request: {e}"
 
+def clean_response_string(text):
+    if isinstance(text, str):
+        return text.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
+    return ""
+
+def extract_text(data, path=""):
+    if isinstance(data, str):
+        return clean_response_string(data)
+    elif isinstance(data, (dict, list)):
+        extracted_text = ""
+        if isinstance(data, dict):
+            items = data.items()
+        else:
+            items = enumerate(data)
+
+        for key, value in items:
+            current_path = f"{path}[{key}]" if path else str(key)
+            if isinstance(value, (str, dict, list)):
+                result = extract_text(value, current_path)
+                if result:
+                    st.write(f"Extracted from {current_path}: {result[:100]}...")
+                    extracted_text += result + "\n"
+        return extracted_text
+    return ""
+
+def generate_response(input_text):
+    try:
+        bot = get_chatbot()
+        if bot is None:
+            st.error("Chatbot initialization failed. Please check the logs.")
+            return "A problem occurred during chatbot initialization."
+
+        response = bot.ask(input_text)
+
+        st.write(f"Raw Response Type: {type(response)}")
+        st.write(f"Raw Response: {response}")
+
+        extracted_response = extract_text(response)
+        if not extracted_response.strip():
+            return "Could not extract any text from the model's response."
+
+        response = extracted_response
+
+        response_parts = response.split("\n")
+        formatted_response = []
+        current_part = ""
+
+        for part in response_parts:
+            if not part.strip():
+                continue
+
+            if re.match(r"^\d+\.", part.strip()) or re.match(r"^\d+$", part.strip()) or part.strip().startswith(("404.", "405.")):
+                if current_part:
+                    formatted_response.append(current_part.strip())
+                current_part = f"{part.strip()} "
+            else:
+                current_part += part.strip() + " "
+
+        if current_part:
+            formatted_response.append(current_part.strip())
+
+        return "\n\n".join(f"- {part}" for part in formatted_response)
+
+    except Exception as e:
+        st.error(f"Error during response generation: {e}")
+        return f"Sorry, there was an error processing your request: {e}"
+
 @st.cache_resource
 def get_chatbot(pdf_path='gpmc.pdf'):
     try:
@@ -79,13 +138,7 @@ def get_chatbot(pdf_path='gpmc.pdf'):
         st.error(f"Error creating chatbot: {e}")
         return None
 
-def generate_response(input_text):
-    chatbot = get_chatbot()
-    if chatbot:
-        return chatbot.ask(input_text)
-    else:
-        return "Failed to initialize the chatbot. Please check the logs."
-
+# Streamlit setup
 st.set_page_config(page_title="Chatbot")
 st.title("Chatbot")
 
