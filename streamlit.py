@@ -89,7 +89,10 @@ class CustomChatbot:
         )
 
     def ask(self, question):
-        return self.rag_chain.invoke(question)
+        # Ensure the input format is correct
+        context = self.docsearch.as_retriever()  # Retrieve context from documents
+        input_data = {"context": context, "question": question}
+        return self.rag_chain.invoke(input_data)
 
 # Streamlit setup
 st.set_page_config(page_title="Chatbot")
