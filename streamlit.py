@@ -19,10 +19,23 @@ load_dotenv()
 
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
 os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
-pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_env)
+
 
 # Pinecone index name
 index_name = "chatbot"  # Change this to your Pinecone index name
+
+  self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
+        # Create Pinecone index if it doesn't exist
+        if index_name not in .pc.list_indexes().names():
+            pc.create_index(
+                name=self.index_name,
+                dimension=768,  
+                metric='cosine',
+                spec=ServerlessSpec(
+                    cloud='aws', 
+                    region='us-east-1'  
+                )
+            )
 
 # Initialize embedding model
 embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
