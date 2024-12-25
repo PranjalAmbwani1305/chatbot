@@ -24,7 +24,7 @@ os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 # Pinecone index name
 index_name = "chatbot"  # Change this to your Pinecone index name
 
-  self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
+  pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
         # Create Pinecone index if it doesn't exist
         if index_name not in .pc.list_indexes().names():
             pc.create_index(
