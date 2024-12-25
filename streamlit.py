@@ -12,7 +12,7 @@ import streamlit as st
 from huggingface_hub import login
 
 # Log in to Hugging Face (use your actual token)
-login(token='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') #Replace with your token
+login(token='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')  # Replace with your token
 
 # Load environment variables
 load_dotenv()
@@ -22,7 +22,54 @@ os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
 os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
 class CustomChatbot:
-    # ... (rest of the CustomChatbot class remains the same)
+    def __init__(self, pdf_path):
+        loader = PyMuPDFLoader(pdf_path)
+        documents = loader.load()
+        text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
+        self.docs = text_splitter.split_documents(documents)
+        self.embeddings = HuggingFaceEmbeddings()
+        self.index_name = "chatbot"
+        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
+
+        if self.index_name not in self.pc.list_indexes().names():
+            self.pc.create_index(
+                name=self.index_name,
+                dimension=768,
+                metric='cosine',
+                spec=ServerlessSpec(cloud='aws', region='us-east-1')
+            )
+
+        self.llm = HuggingFaceEndpoint(
+            repo_id="distilbert-base-uncased-distilled-squad",
+            temperature=0.8, top_k=50,
+            huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
+        )
+
+        template = """
+        You are a chatbot for answering questions about the specified document.
+        Answer these questions and explain the process step by step.
+        If you don't know the answer, just say "I don't know."
+
+        Context: {context}
+        Question: {question}
+        Answer:
+        """
+        try:
+            self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
+        except Exception as e:
+            st.error(f"Error initializing PromptTemplate: {e}")
+            raise
+
+        self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
+        self.rag_chain = (
+            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
+            | self.prompt | self.llm | StrOutputParser()
+        )
+
+    def ask(self, question):
+        context = self.docsearch.as_retriever()
+        inputs = {"context": context, "question": question}
+        return self.rag_chain.invoke(inputs)
 
 def clean_response_string(text):
     if isinstance(text, str):
@@ -39,7 +86,7 @@ def extract_and_clean_text_from_dict(data, key_path=None):
                 cleaned_text = clean_response_string(value)
                 st.write(f"Extracted from path {current_path}: {cleaned_text[:100]}...")
                 return cleaned_text
-            elif isinstance(value,(dict,list)): #Also check for nested lists
+            elif isinstance(value, (dict, list)):
                 result = extract_and_clean_text_from_dict(value, current_path)
                 if result:
                     return result
@@ -50,19 +97,18 @@ def extract_and_clean_text_from_dict(data, key_path=None):
 def extract_and_clean_text_from_list(data):
     if isinstance(data, list):
         for item in data:
-            if isinstance(item,str):
+            if isinstance(item, str):
                 cleaned_text = clean_response_string(item)
                 st.write(f"Extracted from list: {cleaned_text[:100]}...")
                 return cleaned_text
-            elif isinstance(item,dict):
+            elif isinstance(item, dict):
                 result = extract_and_clean_text_from_dict(item)
                 if result:
                     return result
-            elif isinstance(item,list): #Check for nested lists
+            elif isinstance(item, list):
                 result = extract_and_clean_text_from_list(item)
                 if result:
                     return result
-
         st.write("No string or dict value found within the list")
         return "No text found within the list"
     return None
@@ -72,7 +118,6 @@ def generate_response(input_text):
         bot = get_chatbot()
         response = bot.ask(input_text)
 
-        # Robust response handling
         if isinstance(response, str):
             response = clean_response_string(response)
         elif isinstance(response, dict):
@@ -93,22 +138,17 @@ def generate_response(input_text):
 st.set_page_config(page_title="Chatbot")
 st.title("Chatbot")
 
-# Cache the Chatbot instance
 @st.cache_resource
 def get_chatbot(pdf_path='gpmc.pdf'):
     return CustomChatbot(pdf_path=pdf_path)
 
-
-# Manage session state
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Ask me questions about the document."}]
 
-# Display previous chat messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-# Process user input
 if input_text := st.chat_input("Type your question here..."):
     st.session_state.messages.append({"role": "user", "content": input_text})
     with st.chat_message("user"):
