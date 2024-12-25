@@ -2,7 +2,7 @@ import os
 import re
 from langchain.prompts import PromptTemplate
 from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceHub
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
 from langchain.schema.runnable import RunnablePassthrough
@@ -12,7 +12,11 @@ import streamlit as st
 from huggingface_hub import login
 
 # Hugging Face login (from Streamlit secrets)
-login(token = "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")
+try:
+    login(token = "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")
+except KeyError:
+    st.error("Please add your Hugging Face token to Streamlit secrets (secrets.toml).")
+    st.stop()
 
 # Load environment variables
 load_dotenv()
@@ -38,10 +42,9 @@ class CustomChatbot:
                     spec=ServerlessSpec(cloud='aws', region='us-east-1')
                 )
 
-            self.llm = HuggingFaceEndpoint(
-                repo_id="distilbert-base-uncased-distilled-squad",
-                temperature=0.8, top_k=50,
-                huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
+            self.llm = HuggingFaceHub(  # Using HuggingFaceHub
+                repo_id="deepset/roberta-base-squad2",  # Example model: deepset/roberta-base-squad2
+                model_kwargs={"temperature": 0.0, "max_length": 512}  # Adjust as needed
             )
             self.retriever = self.docsearch.as_retriever()
         except Exception as e:
@@ -56,12 +59,9 @@ class CustomChatbot:
 
             context_str = "\n".join([doc.page_content for doc in context])
 
-            inputs = {
-                "question": question,
-                "context": context_str
-            }
-            st.write(f"Inputs:\n{inputs}")  # Debugging: Print the inputs
-            response = self.llm.invoke(inputs)
+            inputs = {"inputs": {"question": question, "context": context_str}}
+            st.write(f"Inputs:\n{inputs}")  # Debugging
+            response = self.llm(inputs)
             return response
         except Exception as e:
             st.error(f"Error during ask: {e}")
