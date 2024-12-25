@@ -12,7 +12,7 @@ import streamlit as st
 from huggingface_hub import login
 
 # Hugging Face login (from Streamlit secrets)
-login(token=st.secrets["HF_TOKEN"])
+login(token = "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")
 
 # Load environment variables
 load_dotenv()
