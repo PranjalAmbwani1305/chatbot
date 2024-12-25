@@ -10,6 +10,7 @@ from sentence_transformers import SentenceTransformer
 import pinecone
 import os
 
+
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -19,7 +20,6 @@ load_dotenv()
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
 os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
-pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_env)
 
 # Pinecone index name
 index_name = "chatbot"  # Change this to your Pinecone index name
