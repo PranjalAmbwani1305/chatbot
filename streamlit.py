@@ -1,4 +1,5 @@
 import os
+import streamlit as st
 from langchain_core.prompts import PromptTemplate
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
@@ -8,7 +9,6 @@ from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
 from pinecone import Pinecone as PineconeClient, ServerlessSpec
 from dotenv import load_dotenv
-import streamlit as st
 from huggingface_hub import login
 
 # Log in to Hugging Face (use your actual token)
@@ -21,41 +21,41 @@ load_dotenv()
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
 os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
+
 class CustomChatbot:
     def __init__(self, pdf_path):
 
-        loader = PyMuPDFLoader(pdf_path) 
+        # Load document from PDF
+        loader = PyMuPDFLoader(pdf_path)
         documents = loader.load()
-        
 
+        # Split document into smaller chunks
         text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
         self.docs = text_splitter.split_documents(documents)
-        
 
+        # Initialize embeddings from HuggingFace
         self.embeddings = HuggingFaceEmbeddings()
-      
+
+        # Pinecone setup
         self.index_name = "chatbot"
-        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
+        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
                 name=self.index_name,
-                dimension=348,  
+                dimension=768,  # Correct dimension for your embeddings
                 metric='cosine',
-                spec=ServerlessSpec(
-                    cloud='aws', 
-                    region='us-east-1'  
-                )
+                spec=ServerlessSpec(cloud='aws', region='us-east-1')
             )
 
-  
+        # Set up Hugging Face endpoint for question answering
         self.llm = HuggingFaceEndpoint(
-            repo_id="deepset/roberta-base-squad2", 
-            temperature=0.8, 
-            top_k=50, 
+            repo_id="deepset/roberta-base-squad2",
+            temperature=0.8,
+            top_k=50,
             huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
         )
 
-     
+        # Define the prompt template
         template = """
         You are a chatbot for answering questions about the specified document. 
         Answer these questions and explain the process step by step.
@@ -66,7 +66,7 @@ class CustomChatbot:
         Answer: 
         """
         self.prompt = PromptTemplate(
-            template=template, 
+            template=template,
             input_variables=["context", "question"]
         )
 
@@ -85,11 +85,11 @@ class CustomChatbot:
         return self.rag_chain.invoke(question)
 
 
-
-st.set_page_config(page_title=" Chatbot")
+# Streamlit interface
+st.set_page_config(page_title="Chatbot")
 st.title("Chatbot")
 
-# Cache the Chatbot instance
+# Cache the chatbot instance
 @st.cache_resource
 def get_chatbot():
     return CustomChatbot(pdf_path='gpmc.pdf')
@@ -99,43 +99,43 @@ def generate_response(input_text):
     bot = get_chatbot()
     response = bot.ask(input_text)
 
- 
+    # Clean up and format the response
     if isinstance(response, str):
         response = response.replace("\uf8e7", "").replace("\xad", "")
-        response = response.replace("\\n", "\n").replace("\t", " ")  
+        response = response.replace("\\n", "\n").replace("\t", " ")  # Format newlines and tabs
 
-        return response
-    
     return response
 
 
+# Session state to hold chat messages
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": " Ask me questions about the document."}
+        {"role": "assistant", "content": "Ask me questions about the document."}
     ]
 
-
+# Display chat messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-
+# Handle user input and generate response
 if input_text := st.chat_input("Type your question here..."):
-    # Append user message to session state
+    # Append the user message to session state
     st.session_state.messages.append({"role": "user", "content": input_text})
     with st.chat_message("user"):
         st.write(input_text)
 
-   
+    # Generate assistant response
     with st.chat_message("assistant"):
         with st.spinner("Generating response..."):
             response = generate_response(input_text)
 
-      
+            # Display response (use markdown for proper formatting if needed)
             if isinstance(response, str) and len(response) > 100:
                 st.markdown(response)
             else:
                 st.write(response)
 
-        
+        # Append the assistant's response to session state
         st.session_state.messages.append({"role": "assistant", "content": response})
+
