@@ -90,7 +90,9 @@ class CustomChatbot:
         )
 
     def ask(self, question):
-        return self.rag_chain.invoke(question)
+        # Prepare the inputs as a dictionary
+        context = self.docsearch.as_retriever()
+        return self.rag_chain.invoke({"context": context, "question": question})
 
 
 # Streamlit setup
