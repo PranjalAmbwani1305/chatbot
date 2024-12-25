@@ -6,18 +6,18 @@ from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
 from langchain.schema.runnable import RunnablePassthrough
-from langchain.schema.output_parser import StrOutputParser
 from pinecone import Pinecone as PineconeClient, ServerlessSpec
 from dotenv import load_dotenv
 import streamlit as st
 from huggingface_hub import login
 
-login(token = "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")
+# Hugging Face login (replace with your token in Streamlit secrets)
+login(token=st.secrets["HF_TOKEN"])
 
 # Load environment variables
 load_dotenv()
 
-# Set up API keys
+# Set up API keys from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
 os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
@@ -57,11 +57,11 @@ class CustomChatbot:
             self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
             self.rag_chain = (
                 {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
-                | self.prompt | self.llm | StrOutputParser()
+                | self.prompt | self.llm # Removed StrOutputParser! This is crucial
             )
         except Exception as e:
             st.error(f"Error initializing chatbot: {e}")
-            raise  # Re-raise to stop execution
+            raise
 
     def ask(self, question):
         try:
