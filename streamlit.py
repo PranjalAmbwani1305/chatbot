@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import streamlit as st
 from huggingface_hub import login
 
-# Log in to Hugging Face (use your actual token)
+# Log in to Hugging Face
 login(token='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')
 
 # Load environment variables
@@ -24,26 +24,26 @@ os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 class CustomChatbot:
     def __init__(self, pdf_path):
 
-        # Load PDF documents
+        # Load PDF
         loader = PyMuPDFLoader(pdf_path)
         documents = loader.load()
 
-        # Split documents into smaller chunks
+        # Split text
         text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
         self.docs = text_splitter.split_documents(documents)
 
-        # Initialize embeddings
+        # Setup embeddings
         self.embeddings = HuggingFaceEmbeddings()
 
         # Pinecone setup
         self.index_name = "chatbot"
         self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
         
-        # Create Pinecone index if it doesn't exist
+        # Create index
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
                 name=self.index_name,
-                dimension=768,  # Ensure this is correct for your embeddings
+                dimension=768,  # Ensure this matches your embeddings' dimension
                 metric='cosine',
                 spec=ServerlessSpec(
                     cloud='aws',
@@ -51,7 +51,7 @@ class CustomChatbot:
                 )
             )
 
-        # Setup HuggingFace model for Q&A (using a transformer model like RoBERTa)
+        # Setup model
         self.llm = HuggingFaceEndpoint(
             repo_id="distilbert-base-uncased-distilled-squad", 
             temperature=0.8, 
@@ -59,7 +59,7 @@ class CustomChatbot:
             huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
         )
 
-        # Define the prompt template
+        # Define prompt
         template = """
         You are a chatbot for answering questions about the specified document. 
         Answer these questions and explain the process step by step.
@@ -78,10 +78,10 @@ class CustomChatbot:
             st.error(f"Error initializing PromptTemplate: {e}")
             raise  # Re-raise the exception to stop further execution if necessary
 
-        # Initialize Pinecone index with documents
+        # Initialize search
         self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
 
-        # Define the retrieval-augmented generation (RAG) chain
+        # Define chain
         self.rag_chain = (
             {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
             | self.prompt
@@ -90,26 +90,29 @@ class CustomChatbot:
         )
 
     def ask(self, question):
-        return self.rag_chain.invoke(question)
-
+        input_dict = {
+            "context": self.docsearch.as_retriever(),  # Ensure the context is a valid retriever
+            "question": question
+        }
+        return self.rag_chain.invoke(input_dict)  # Pass the input as a dictionary
 
 # Streamlit setup
 st.set_page_config(page_title="Chatbot")
 st.title("Chatbot")
 
-# Cache the Chatbot instance to avoid reloading the model and data each time
+# Cache chatbot
 def get_chatbot(pdf_path='gpmc.pdf'):
     # Initialize chatbot only once to avoid reloading large data
     return CustomChatbot(pdf_path=pdf_path)
 
 
-# Function to generate response from the chatbot
+# Generate response
 def generate_response(input_text):
     try:
         bot = get_chatbot()  # Get or initialize the chatbot instance
         response = bot.ask(input_text)  # Get the response
 
-        # Clean response from any unwanted characters
+        # Clean response
         if isinstance(response, str):
             response = response.replace("\uf8e7", "").replace("\xad", "")
             response = response.replace("\\n", "\n").replace("\t", " ")  # Clean newlines and tabs
@@ -121,18 +124,18 @@ def generate_response(input_text):
     return response
 
 
-# Manage session state for chat messages
+# Manage session
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Ask me questions about the document."}
     ]
 
-# Display previous chat messages
+# Display chat
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-# Process user input and generate response
+# Process input
 if input_text := st.chat_input("Type your question here..."):
     # Append user message to session state
     st.session_state.messages.append({"role": "user", "content": input_text})
