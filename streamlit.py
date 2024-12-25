@@ -7,6 +7,7 @@ from langchain.vectorstores import Pinecone
 from langchain.chains import RetrievalQA
 from langchain.llms import HuggingFaceHub
 import pinecone
+import os
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -14,13 +15,13 @@ warnings.filterwarnings("ignore")
 # Load environment variables
 load_dotenv()
 
-# Configure Pinecone
-pinecone_api_key = os.getenv("PINECONE_API_KEY")
-pinecone_env = os.getenv("PINECONE_ENVIRONMENT")
-pinecone.init(api_key=pinecone_api_key, environment=pinecone_env)
+os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
+os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
+
+pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_env)
 
 # Pinecone index name
-index_name = "my-vector-index"  # Change this to your Pinecone index name
+index_name = "chatbot"  # Change this to your Pinecone index name
 
 # Initialize embedding model
 embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
