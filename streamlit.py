@@ -13,7 +13,7 @@ import pinecone
 
 # Load environment variables
 load_dotenv()
-os.environ['HUGGINGFACEHUB_API_KEY]' = os.getenv("HUGGINGFACEHUB_API_KEY")
+os.environ['HUGGINGFACEHUB_API_KEY] = os.getenv("HUGGINGFACEHUB_API_KEY")
 os.environ['PINECONE_API_KEY'] = os.getenv("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = "us-east-1"  # Replace with your Pinecone environment
 
