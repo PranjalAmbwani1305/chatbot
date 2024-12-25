@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 import streamlit as st
 from huggingface_hub import login
 
-# Log in to Hugging Face (use your actual token)
-login(token='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')  # Replace with your token
+# Hugging Face login (replace with your token)
+login(token='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')
 
 # Load environment variables
 load_dotenv()
@@ -33,9 +33,7 @@ class CustomChatbot:
 
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
-                name=self.index_name,
-                dimension=768,
-                metric='cosine',
+                name=self.index_name, dimension=768, metric='cosine',
                 spec=ServerlessSpec(cloud='aws', region='us-east-1')
             )
 
@@ -54,12 +52,7 @@ class CustomChatbot:
         Question: {question}
         Answer:
         """
-        try:
-            self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
-        except Exception as e:
-            st.error(f"Error initializing PromptTemplate: {e}")
-            raise
-
+        self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
         self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
         self.rag_chain = (
             {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
@@ -118,6 +111,9 @@ def generate_response(input_text):
         bot = get_chatbot()
         response = bot.ask(input_text)
 
+        st.write(f"Raw Response Type: {type(response)}")  # CRUCIAL DEBUGGING
+        st.write(f"Raw Response: {response}")          # CRUCIAL DEBUGGING
+
         if isinstance(response, str):
             response = clean_response_string(response)
         elif isinstance(response, dict):
@@ -125,8 +121,7 @@ def generate_response(input_text):
         elif isinstance(response, list):
             response = extract_and_clean_text_from_list(response)
         else:
-            st.write(f"Unexpected response type: {type(response)}")
-            response = "Sorry, the response format is not supported."
+            response = f"Unexpected response type: {type(response)}. Raw Response: {response}"
 
     except Exception as e:
         st.error(f"Error during response generation: {e}")
@@ -135,11 +130,11 @@ def generate_response(input_text):
     return response
 
 # Streamlit setup
-st.set_page_config(page_title="Chatbot")
-st.title("Chatbot")
+st.set_page_config(page_title="GPMC Chatbot")
+st.sidebar.title("Chatbot")
 
 @st.cache_resource
-def get_chatbot(pdf_path='gpmc.pdf'):
+def get_chatbot(pdf_path='gpmc.pdf'):  
     return CustomChatbot(pdf_path=pdf_path)
 
 if "messages" not in st.session_state:
@@ -157,10 +152,8 @@ if input_text := st.chat_input("Type your question here..."):
     with st.chat_message("assistant"):
         with st.spinner("Generating response..."):
             response = generate_response(input_text)
-
             if isinstance(response, str) and len(response) > 100:
                 st.markdown(response)
             else:
                 st.write(response)
-
         st.session_state.messages.append({"role": "assistant", "content": response})
