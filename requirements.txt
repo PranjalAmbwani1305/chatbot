@@ -1,5 +1,6 @@
 streamlit
 langchain
+langchain-community
 pinecone-client
 python-dotenv
 sentence-transformers
