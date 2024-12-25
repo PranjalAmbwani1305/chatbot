@@ -43,7 +43,7 @@ class CustomChatbot:
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
                 name=self.index_name,
-                dimension=348,  # Ensure this is correct for your embeddings
+                dimension=768,  # Ensure this is correct for your embeddings
                 metric='cosine',
                 spec=ServerlessSpec(
                     cloud='aws',
