@@ -97,7 +97,17 @@ class CustomChatbot:
     def ask(self, question):
         # Format the input as a dictionary
         inputs = {"context": self.docsearch.as_retriever(), "question": question}
-        return self.rag_chain.invoke(inputs)
+        response = self.rag_chain.invoke(inputs)
+        
+        # Debugging: Log the type and content of the response
+        st.write(f"Response Type: {type(response)}")
+        st.write(f"Response Content: {response}")
+
+        # Ensure the response is either a string or a dictionary
+        if not isinstance(response, (str, dict)):
+            raise ValueError(f"Unexpected response type: {type(response)}")
+
+        return response
 
 
 # Streamlit setup
@@ -115,18 +125,19 @@ def generate_response(input_text):
         bot = get_chatbot()  # Get or initialize the chatbot instance
         response = bot.ask(input_text)  # Get the response
 
-        # Handle response formatting
+        # Handle response based on its type
         if isinstance(response, str):
-            # If the response is a string, clean it by replacing unwanted characters
+            # Clean string responses
             response = response.replace("\uf8e7", "").replace("\xad", "")
-            response = response.replace("\\n", "\n").replace("\t", " ")  # Clean newlines and tabs
+            response = response.replace("\\n", "\n").replace("\t", " ")
         elif isinstance(response, dict):
-            # If response is a dictionary, extract the relevant text (e.g., 'text' key)
-            response_text = response.get('text', "Sorry, no text found in response.")
-            # After extracting the response text, clean it if needed
+            # Extract 'text' from dictionary response and clean it
+            response_text = response.get('text', "No meaningful response found.")
             response_text = response_text.replace("\uf8e7", "").replace("\xad", "")
             response_text = response_text.replace("\\n", "\n").replace("\t", " ")
-            response = response_text  # Set response to the cleaned text
+            response = response_text
+        else:
+            response = "Unexpected response type received."
 
     except Exception as e:
         st.error(f"Error during response generation: {e}")
