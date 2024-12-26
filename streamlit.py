@@ -1,4 +1,5 @@
 import os
+import time
 import streamlit as st
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import CharacterTextSplitter
@@ -81,7 +82,7 @@ class CustomChatbot:
             )
         except Exception as e:
             st.error(f"Error initializing PromptTemplate: {e}")
-            raise  # Re-raise the exception to stop further execution if necessary
+            raise
 
         # Initialize Pinecone index with documents
         self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
@@ -95,20 +96,12 @@ class CustomChatbot:
         )
 
     def ask(self, question):
-        # Format the input as a dictionary
-        inputs = {"context": self.docsearch.as_retriever(), "question": question}
-        response = self.rag_chain.invoke(inputs)
-        
-        # Debugging: Log the type and content of the response
-        st.write(f"Response Type: {type(response)}")
-        st.write(f"Response Content: {response}")
-
-        # Ensure the response is either a string or a dictionary
-        if not isinstance(response, (str, dict)):
-            raise ValueError(f"Unexpected response type: {type(response)}")
-
-        return response
-
+        try:
+            inputs = {"context": self.docsearch.as_retriever(), "question": question}
+            return self.rag_chain.invoke(inputs)
+        except Exception as e:
+            st.error(f"Error during RAG chain execution: {e}")
+            return "Sorry, an error occurred while generating the response."
 
 # Streamlit setup
 st.set_page_config(page_title="Chatbot")
@@ -116,35 +109,34 @@ st.sidebar.title("Chatbot")
 
 # Cache the Chatbot instance to avoid reloading the model and data each time
 def get_chatbot(pdf_path='gpmc.pdf'):
-    # Initialize chatbot only once to avoid reloading large data
     return CustomChatbot(pdf_path=pdf_path)
 
-# Function to generate response from the chatbot
 def generate_response(input_text):
     try:
-        bot = get_chatbot()  # Get or initialize the chatbot instance
-        response = bot.ask(input_text)  # Get the response
+        start_time = time.time()
 
-        # Handle response based on its type
+        bot = get_chatbot()  # Get or initialize the chatbot instance
+        load_time = time.time()
+
+        response = bot.ask(input_text)  # Get the response
+        ask_time = time.time()
+
+        # Log timing information
+        st.write(f"Time to load chatbot: {load_time - start_time:.2f}s")
+        st.write(f"Time to generate response: {ask_time - load_time:.2f}s")
+
+        # Clean the response
         if isinstance(response, str):
-            # Clean string responses
-            response = response.replace("\uf8e7", "").replace("\xad", "")
-            response = response.replace("\\n", "\n").replace("\t", " ")
+            response = response.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
         elif isinstance(response, dict):
-            # Extract 'text' from dictionary response and clean it
             response_text = response.get('text', "No meaningful response found.")
-            response_text = response_text.replace("\uf8e7", "").replace("\xad", "")
-            response_text = response_text.replace("\\n", "\n").replace("\t", " ")
-            response = response_text
-        else:
-            response = "Unexpected response type received."
+            response = response_text.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
 
     except Exception as e:
         st.error(f"Error during response generation: {e}")
         return "Sorry, there was an error processing your request."
 
     return response
-
 
 # Manage session state for chat messages
 if "messages" not in st.session_state:
@@ -159,7 +151,6 @@ for message in st.session_state.messages:
 
 # Process user input and generate response
 if input_text := st.chat_input("Type your question here..."):
-    # Append user message to session state
     st.session_state.messages.append({"role": "user", "content": input_text})
     with st.chat_message("user"):
         st.write(input_text)
@@ -169,11 +160,9 @@ if input_text := st.chat_input("Type your question here..."):
         with st.spinner("Generating response..."):
             response = generate_response(input_text)
 
-            # Display the formatted response
             if isinstance(response, str) and len(response) > 100:
                 st.markdown(response)
             else:
                 st.write(response)
 
-        # Append assistant's response to session state
         st.session_state.messages.append({"role": "assistant", "content": response})
