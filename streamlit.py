@@ -30,7 +30,7 @@ class Chatbot:
 
         self.embeddings = HuggingFaceEmbeddings()
 
-        self.index_name = "amcgpmc"
+        self.index_name = "chatbot"
 
         self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
         
@@ -51,9 +51,6 @@ class Chatbot:
         )
 
         template = """
-        You are a chatbot for the Ahmedabad Municipal Corporation. Workers will ask questions regarding the procedures in the GPMC act. 
-        Answer these questions and give answers in a step-by-step process.
-        If you don't know the answer, just say you don't know. 
 
         Context: {context}
         Question: {question}
