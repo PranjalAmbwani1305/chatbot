@@ -69,6 +69,7 @@ class CustomChatbot:
 
         self.rag_chain = (
             {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
+
             | self.prompt
             | self.llm
             | StrOutputParser()
@@ -103,10 +104,9 @@ def generate_response(input_text):
         elif isinstance(response, dict):
             response_text = response.get('text', "No meaningful response found.")
             response = response_text.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
-
     except Exception as e:
         st.error(f"Error during response generation: {e}")
-        return "Sorry, there was an error processing your request."
+        response = "Sorry, there was an error processing your request."
 
     return response
 
