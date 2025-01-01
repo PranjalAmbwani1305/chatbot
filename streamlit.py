@@ -101,7 +101,9 @@ def generate_response(input_text):
         if isinstance(response, str):
             response = response.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
         elif isinstance(response, dict):
+            # If response is a dictionary, we need to extract the actual text from it
             response_text = response.get('text', "No meaningful response found.")
+            # Now, perform the replace operation on the extracted text
             response = response_text.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
     except Exception as e:
         st.error(f"Error during response generation: {e}")
