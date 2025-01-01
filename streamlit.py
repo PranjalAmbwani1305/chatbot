@@ -3,7 +3,8 @@ import time
 import streamlit as st
 from langchain_core.prompts import PromptTemplate
 from langchain_community.document_loaders import PyMuPDFLoader  
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.llms import HuggingFaceEndpoint
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
 from langchain.schema.runnable import RunnablePassthrough
