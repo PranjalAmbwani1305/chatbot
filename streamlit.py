@@ -81,7 +81,7 @@ class CustomChatbot:
             return self.rag_chain.invoke(inputs)
         except Exception as e:
             st.error(f"Error during RAG chain execution: {e}")
-            return "Sorry, an error occurred while generating the response."
+            return {"text": "Sorry, an error occurred while generating the response."}
 
 def get_chatbot(pdf_path='gpmc.pdf'):
     return CustomChatbot(pdf_path=pdf_path)
