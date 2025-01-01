@@ -73,8 +73,7 @@ class Chatbot:
     def ask(self, question):
         return self.rag_chain.invoke(question)
     
-    st.side.title("Chatbot for the GPMC Act")
-
+    
 @st.cache_resource
 def get_chatbot():
     return Chatbot()
