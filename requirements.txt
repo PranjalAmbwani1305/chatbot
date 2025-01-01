@@ -4,3 +4,4 @@ huggingface_hub
 pinecone-client
 streamlit
 python-dotenv
+ PyMuPDF
