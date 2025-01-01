@@ -1,60 +1,58 @@
 import os
 import time
 import streamlit as st
-from langchain_community.document_loaders import PyMuPDFLoader
-from langchain.text_splitter import CharacterTextSplitter
+from langchain_core.prompts import PromptTemplate
+from langchain_community.document_loaders import PyMuPDFLoader  
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
+from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
-from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
+from pinecone import Pinecone as PineconeClient, ServerlessSpec  
 from dotenv import load_dotenv
 from huggingface_hub import login
-from pinecone import Pinecone as PineconeClient, ServerlessSpec
 
-login(token='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')
+login(token='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')
 
 load_dotenv()
 
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
 os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
-@st.cache_resource
-def load_and_process_pdf(pdf_path):
-    loader = PyMuPDFLoader(pdf_path)
-    documents = loader.load()
-    text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
-    return text_splitter.split_documents(documents)
+class Chatbot:
+    def __init__(self):
+        loader = PyMuPDFLoader('gpmc.pdf') 
+        documents = loader.load()
+        
+        text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
+        self.docs = text_splitter.split_documents(documents)
 
-class CustomChatbot:
-    def __init__(self, pdf_path):
-        self.docs = load_and_process_pdf(pdf_path)
         self.embeddings = HuggingFaceEmbeddings()
-        self.index_name = "chatbot"
-        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
+
+        self.index_name = "amcgpmc"
+
+        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
         
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
                 name=self.index_name,
                 dimension=768,
                 metric='cosine',
-                spec=ServerlessSpec(
-                    cloud='aws',
-                    region='us-east-1'
-                )
+                spec=ServerlessSpec(cloud='aws', region='us-east-1')
             )
 
+        repo_id = "mistralai/Mixtral-8x7B-Instruct-v0.1"
         self.llm = HuggingFaceEndpoint(
-            repo_id="distilbert-base-uncased-distilled-squad",
+            repo_id=repo_id, 
             temperature=0.8, 
             top_k=50, 
             huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
         )
 
         template = """
-        You are a chatbot for answering questions about the specified document. 
-        Answer these questions and explain the process step by step.
-        If you don't know the answer, just say "I don't know."
+        You are a chatbot for the Ahmedabad Municipal Corporation. Workers will ask questions regarding the procedures in the GPMC act. 
+        Answer these questions and give answers in a step-by-step process.
+        If you don't know the answer, just say you don't know. 
 
         Context: {context}
         Question: {question}
@@ -75,45 +73,43 @@ class CustomChatbot:
         )
 
     def ask(self, question):
-        try:
-            inputs = {"context": self.docsearch.as_retriever(), "question": question}
-            return self.rag_chain.invoke(inputs)
-        except Exception as e:
-            st.error(f"Error during RAG chain execution: {e}")
-            return {"text": "Sorry, an error occurred while generating the response."}
+        return self.rag_chain.invoke(question)
 
-def get_chatbot(pdf_path='gpmc.pdf'):
-    return CustomChatbot(pdf_path=pdf_path)
+@st.cache_resource
+def get_chatbot():
+    return Chatbot()
 
 def generate_response(input_text):
-    try:
-        start_time = time.time()
+    bot = get_chatbot()
+    response = bot.ask(input_text)
 
-        bot = get_chatbot()  
-        load_time = time.time()
+    if isinstance(response, str):
+        response = response.replace("\uf8e7", "").replace("\xad", "")
+        response = response.replace("\\n", "\n").replace("\t", " ")
+        response = response.replace("Guj", "Gujarat")
 
-        response = bot.ask(input_text)  
-        ask_time = time.time()
-
-        st.write(f"Time to load chatbot: {load_time - start_time:.2f}s")
-        st.write(f"Time to generate response: {ask_time - load_time:.2f}s")
-
-        if isinstance(response, str):
-            response = response.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
-        elif isinstance(response, dict):
-            # If response is a dictionary, we need to extract the actual text from it
-            response_text = response.get('text', "No meaningful response found.")
-            # Now, perform the replace operation on the extracted text
-            response = response_text.replace("\uf8e7", "").replace("\xad", "").replace("\\n", "\n").replace("\t", " ")
-    except Exception as e:
-        st.error(f"Error during response generation: {e}")
-        response = "Sorry, there was an error processing your request."
-
+        response_parts = response.split("\n")
+        formatted_response = []
+        current_part = ""
+        
+        for part in response_parts:
+            if part.strip().isdigit() or part.strip().startswith(tuple(str(i) for i in range(1, 10))) or part.strip().startswith(("404.", "405.")):
+                if current_part:
+                    formatted_response.append(current_part.strip())
+                current_part = f"{part.strip()} "
+            else:
+                current_part += part.strip() + " "
+        
+        if current_part:
+            formatted_response.append(current_part.strip())
+        
+        return "\n\n".join(f"- {part}" for part in formatted_response)
+    
     return response
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "Ask me questions about the document."}
+        {"role": "assistant", "content": "Welcome! Ask me questions about the GPMC of AMC."}
     ]
 
 for message in st.session_state.messages:
