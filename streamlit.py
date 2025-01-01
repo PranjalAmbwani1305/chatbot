@@ -85,7 +85,7 @@ def generate_response(input_text):
 
     if isinstance(response, str):
         response = response.replace("\uf8e7", "").replace("\xad", "")
-        response = response.replace("\\n", "\n").replace("\t", " ")
+        response = response.replace("\\n", "\n").replace("\n", " ")
         response = response.replace("Guj", "Gujarat")
 
         response_parts = response.split("\n")
