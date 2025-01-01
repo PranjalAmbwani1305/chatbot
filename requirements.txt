@@ -2,3 +2,4 @@ langchain
 pinecone-client
 python-dotenv
 huggingface-hub
+langchain-huggingface
