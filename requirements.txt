@@ -1,5 +1,6 @@
 langchain_community
 langchain
+langchain_huggingface
 huggingface_hub
 pinecone-client
 streamlit
