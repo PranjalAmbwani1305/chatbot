@@ -1,5 +1,6 @@
+langchain_community
 langchain
+huggingface_hub
 pinecone-client
+streamlit
 python-dotenv
-huggingface-hub
-langchain-huggingface
