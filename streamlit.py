@@ -25,13 +25,12 @@ class Chatbot:
         loader = PyMuPDFLoader('gpmc.pdf') 
         documents = loader.load()
         
-        text_splitter = CharacterTextSplitter(chunk_size=4000, chunk_overlap=4)
+        text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=100)
         self.docs = text_splitter.split_documents(documents)
 
         self.embeddings = HuggingFaceEmbeddings()
 
         self.index_name = "chatbot"
-
         self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
         
         if self.index_name not in self.pc.list_indexes().names():
@@ -51,10 +50,13 @@ class Chatbot:
         )
 
         template = """
+        Given the context below, answer the question. Be as precise as possible and provide detailed information from the context if available.
 
         Context: {context}
+
         Question: {question}
-        Answer: 
+
+        Answer:
         """
         self.prompt = PromptTemplate(
             template=template, 
@@ -73,7 +75,7 @@ class Chatbot:
     def ask(self, question):
         return self.rag_chain.invoke(question)
     
-    
+
 @st.cache_resource
 def get_chatbot():
     return Chatbot()
