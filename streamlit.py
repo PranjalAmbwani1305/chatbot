@@ -22,7 +22,7 @@ os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
 class Chatbot:
     def __init__(self):
-        loader = PyMuPDFLoader('gpmc.pdf') 
+        loader = PyMuPDFLoader('gpmc.pdf')  
         documents = loader.load()
         
         text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=100)
@@ -66,7 +66,7 @@ class Chatbot:
         self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
 
         self.rag_chain = (
-            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
+            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough() }
             | self.prompt
             | self.llm
             | StrOutputParser()
@@ -74,7 +74,6 @@ class Chatbot:
 
     def ask(self, question):
         return self.rag_chain.invoke(question)
-    
 
 @st.cache_resource
 def get_chatbot():
