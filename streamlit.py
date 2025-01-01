@@ -69,7 +69,6 @@ class CustomChatbot:
 
         self.rag_chain = (
             {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
-
             | self.prompt
             | self.llm
             | StrOutputParser()
