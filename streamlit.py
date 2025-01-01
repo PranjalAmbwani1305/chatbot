@@ -22,13 +22,13 @@ os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
 
 class Chatbot:
     def __init__(self):
-        loader = PyMuPDFLoader('gpmc.pdf') 
+        loader = PyMuPDFLoader('gpmc.pdf')
         documents = loader.load()
         
-        text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=100)
+        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=50)
         self.docs = text_splitter.split_documents(documents)
 
-        self.embeddings = HuggingFaceEmbeddings()
+        self.embeddings = HuggingFaceEmbeddings(model_name="distilbert-base-uncased")
 
         self.index_name = "chatbot"
         self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
@@ -44,8 +44,8 @@ class Chatbot:
         repo_id = "mistralai/Mixtral-8x7B-Instruct-v0.1"
         self.llm = HuggingFaceEndpoint(
             repo_id=repo_id, 
-            temperature=0.8, 
-            top_k=50, 
+            temperature=0.5, 
+            top_k=10, 
             huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
         )
 
@@ -63,7 +63,7 @@ class Chatbot:
             input_variables=["context", "question"]
         )
 
-        self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
+        self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name, top_k=5)
 
         self.rag_chain = (
             {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
@@ -74,15 +74,23 @@ class Chatbot:
 
     def ask(self, question):
         return self.rag_chain.invoke(question)
-    
 
 @st.cache_resource
 def get_chatbot():
     return Chatbot()
 
+@st.cache_resource
+def get_docsearch():
+    return Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name, top_k=5)
+
 def generate_response(input_text):
+    start_time = time.time()
+
     bot = get_chatbot()
     response = bot.ask(input_text)
+
+    end_time = time.time()
+    st.write(f"Time taken: {end_time - start_time} seconds")
 
     if isinstance(response, str):
         response = response.replace("\uf8e7", "").replace("\xad", "")
