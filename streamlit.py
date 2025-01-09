@@ -102,23 +102,23 @@ def format_response(response):
         response = response.replace("\\n", "\n").replace("\n", " ")
         response = response.replace("Guj", "Gujarat")
 
-        # Split into parts and format as bullet points
-        response_parts = response.split("\n")
+        # Split text into sentences or list-like structure
+        lines = response.split(". ")
         formatted_response = []
-        current_part = ""
 
-        for part in response_parts:
-            if part.strip().isdigit() or part.strip().startswith(tuple(str(i) for i in range(1, 10))):
-                if current_part:
-                    formatted_response.append(current_part.strip())
-                current_part = f"{part.strip()} "
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue  # Skip empty lines
+            
+            # Detect numbered or bulleted lists
+            if line[0].isdigit() or line.startswith(("-", "*")):
+                formatted_response.append(f"- {line}")
             else:
-                current_part += part.strip() + " "
+                formatted_response.append(line)
 
-        if current_part:
-            formatted_response.append(current_part.strip())
-
-        return "\n\n".join(f"- {part}" for part in formatted_response)
+        # Join the lines into a readable format
+        return "\n\n".join(formatted_response)
 
     return response
 
