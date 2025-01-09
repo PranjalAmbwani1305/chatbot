@@ -1,38 +1,49 @@
 import os
-import time
 import streamlit as st
 from langchain_core.prompts import PromptTemplate
-from langchain_community.document_loaders import PyMuPDFLoader  
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.llms import HuggingFaceEndpoint
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Pinecone
 from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
-from pinecone import Pinecone as PineconeClient, ServerlessSpec  
+from pinecone import Pinecone as PineconeClient, ServerlessSpec
 from dotenv import load_dotenv
 from huggingface_hub import login
 
+# Authenticate Hugging Face
 login(token='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')
 
+# Load environment variables
 load_dotenv()
 
-os.environ['HUGGINGFACE_API_KEY'] = st.secrets["HUGGINGFACE_API_KEY"]
-os.environ['PINECONE_API_KEY'] = st.secrets["PINECONE_API_KEY"]
+# Environment variable validation
+HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY')
+PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+if not HUGGINGFACE_API_KEY or not PINECONE_API_KEY:
+    raise ValueError("API keys for Hugging Face or Pinecone are missing.")
+
+# Set API keys
+os.environ['HUGGINGFACE_API_KEY'] = HUGGINGFACE_API_KEY
+os.environ['PINECONE_API_KEY'] = PINECONE_API_KEY
+
 
 class Chatbot:
     def __init__(self):
-        loader = PyMuPDFLoader('gpmc.pdf')  
+        # Load and split documents
+        loader = PyMuPDFLoader('gpmc.pdf')
         documents = loader.load()
-        
+
         text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=100)
         self.docs = text_splitter.split_documents(documents)
 
+        # Initialize embeddings and vector store
         self.embeddings = HuggingFaceEmbeddings()
-
         self.index_name = "chatbot"
-        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY')) 
-        
+        self.pc = PineconeClient(api_key=PINECONE_API_KEY)
+
+        # Create Pinecone index if not exists
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
                 name=self.index_name,
@@ -41,14 +52,19 @@ class Chatbot:
                 spec=ServerlessSpec(cloud='aws', region='us-east-1')
             )
 
+        # Populate the vector store
+        self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
+
+        # Initialize Hugging Face LLM
         repo_id = "mistralai/Mixtral-8x7B-Instruct-v0.1"
         self.llm = HuggingFaceEndpoint(
-            repo_id=repo_id, 
-            temperature=0.8, 
-            top_k=50, 
-            huggingfacehub_api_token=os.getenv('HUGGINGFACE_API_KEY')
+            repo_id=repo_id,
+            temperature=0.8,
+            top_k=50,
+            huggingfacehub_api_token=HUGGINGFACE_API_KEY
         )
 
+        # Define prompt template
         template = """
         Given the context below, answer the question. Be as precise as possible and provide detailed information from the context if available.
 
@@ -58,15 +74,11 @@ class Chatbot:
 
         Answer:
         """
-        self.prompt = PromptTemplate(
-            template=template, 
-            input_variables=["context", "question"]
-        )
+        self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
 
-        self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
-
+        # Define RAG chain
         self.rag_chain = (
-            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough() }
+            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
             | self.prompt
             | self.llm
             | StrOutputParser()
@@ -75,47 +87,54 @@ class Chatbot:
     def ask(self, question):
         return self.rag_chain.invoke(question)
 
+
 @st.cache_resource
 def get_chatbot():
+    """Cache chatbot instance for reuse."""
     return Chatbot()
 
-def generate_response(input_text):
-    bot = get_chatbot()
-    response = bot.ask(input_text)
 
+def format_response(response):
+    """Format the chatbot's response for better readability."""
     if isinstance(response, str):
+        # Clean and standardize the response
         response = response.replace("\uf8e7", "").replace("\xad", "")
         response = response.replace("\\n", "\n").replace("\n", " ")
         response = response.replace("Guj", "Gujarat")
 
+        # Split into parts and format as bullet points
         response_parts = response.split("\n")
         formatted_response = []
         current_part = ""
-        
+
         for part in response_parts:
-            if part.strip().isdigit() or part.strip().startswith(tuple(str(i) for i in range(1, 10))) or part.strip().startswith(("404.", "405.")):
+            if part.strip().isdigit() or part.strip().startswith(tuple(str(i) for i in range(1, 10))):
                 if current_part:
                     formatted_response.append(current_part.strip())
                 current_part = f"{part.strip()} "
             else:
                 current_part += part.strip() + " "
-        
+
         if current_part:
             formatted_response.append(current_part.strip())
-        
+
         return "\n\n".join(f"- {part}" for part in formatted_response)
-    
+
     return response
 
+
+# Initialize Streamlit session
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Welcome! Ask me questions about the GPMC of AMC."}
     ]
 
+# Display conversation history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
+# Process user input
 if input_text := st.chat_input("Type your question here..."):
     st.session_state.messages.append({"role": "user", "content": input_text})
     with st.chat_message("user"):
@@ -123,11 +142,13 @@ if input_text := st.chat_input("Type your question here..."):
 
     with st.chat_message("assistant"):
         with st.spinner("Generating response..."):
-            response = generate_response(input_text)
+            chatbot = get_chatbot()
+            response = chatbot.ask(input_text)
+            formatted_response = format_response(response)
 
-            if isinstance(response, str) and len(response) > 100:
-                st.markdown(response)
+            if len(formatted_response) > 100:
+                st.markdown(formatted_response)
             else:
-                st.write(response)
+                st.write(formatted_response)
 
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        st.session_state.messages.append({"role": "assistant", "content": formatted_response})
