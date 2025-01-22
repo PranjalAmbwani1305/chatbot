@@ -11,6 +11,10 @@ from langchain.schema.output_parser import StrOutputParser
 from pinecone import Pinecone as PineconeClient, ServerlessSpec
 from dotenv import load_dotenv
 from huggingface_hub import login
+import logging
+
+# Set up logging for debugging
+logging.basicConfig(level=logging.DEBUG)
 
 # Authenticate Hugging Face
 login(token='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')
@@ -31,12 +35,16 @@ os.environ['PINECONE_API_KEY'] = PINECONE_API_KEY
 
 class Chatbot:
     def __init__(self):
+        logging.debug("Initializing Chatbot...")
+
         # Load and split documents
         loader = PyMuPDFLoader('gpmc.pdf')
         documents = loader.load()
+        logging.debug(f"Loaded documents: {documents[:2]}")  # Log the first 2 docs for preview
 
         text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=100)
         self.docs = text_splitter.split_documents(documents)
+        logging.debug(f"Split documents into chunks: {len(self.docs)} chunks")
 
         # Initialize embeddings and vector store
         self.embeddings = HuggingFaceEmbeddings()
@@ -45,6 +53,7 @@ class Chatbot:
 
         # Create Pinecone index if not exists
         if self.index_name not in self.pc.list_indexes().names():
+            logging.debug(f"Creating Pinecone index: {self.index_name}")
             self.pc.create_index(
                 name=self.index_name,
                 dimension=768,
@@ -63,6 +72,7 @@ class Chatbot:
             top_k=50,
             huggingfacehub_api_token=HUGGINGFACE_API_KEY
         )
+        logging.debug("HuggingFace LLM initialized.")
 
         # Define prompt template
         template = """
@@ -85,7 +95,10 @@ class Chatbot:
         )
 
     def ask(self, question):
-        return self.rag_chain.invoke(question)
+        logging.debug(f"Asking question: {question}")
+        response = self.rag_chain.invoke(question)
+        logging.debug(f"Response: {response}")
+        return response
 
 
 @st.cache_resource
@@ -142,13 +155,18 @@ if input_text := st.chat_input("Type your question here..."):
 
     with st.chat_message("assistant"):
         with st.spinner("Generating response..."):
-            chatbot = get_chatbot()
-            response = chatbot.ask(input_text)
-            formatted_response = format_response(response)
+            try:
+                chatbot = get_chatbot()
+                response = chatbot.ask(input_text)
+                formatted_response = format_response(response)
 
-            if len(formatted_response) > 100:
-                st.markdown(formatted_response)
-            else:
-                st.write(formatted_response)
+                if len(formatted_response) > 100:
+                    st.markdown(formatted_response)
+                else:
+                    st.write(formatted_response)
 
-        st.session_state.messages.append({"role": "assistant", "content": formatted_response})
+                st.session_state.messages.append({"role": "assistant", "content": formatted_response})
+            except Exception as e:
+                logging.error(f"Error during chatbot response generation: {e}")
+                st.error("Sorry, there was an error generating the response.")
+
