@@ -37,68 +37,77 @@ class Chatbot:
     def __init__(self):
         logging.debug("Initializing Chatbot...")
 
-        # Load and split documents
-        loader = PyMuPDFLoader('gpmc.pdf')
-        documents = loader.load()
-        logging.debug(f"Loaded documents: {documents[:2]}")  # Log the first 2 docs for preview
+        try:
+            # Load and split documents
+            loader = PyMuPDFLoader('gpmc.pdf')
+            documents = loader.load()
+            logging.debug(f"Loaded documents: {documents[:2]}")  # Log the first 2 docs for preview
 
-        text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=100)
-        self.docs = text_splitter.split_documents(documents)
-        logging.debug(f"Split documents into chunks: {len(self.docs)} chunks")
+            text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=100)
+            self.docs = text_splitter.split_documents(documents)
+            logging.debug(f"Split documents into chunks: {len(self.docs)} chunks")
 
-        # Initialize embeddings and vector store
-        self.embeddings = HuggingFaceEmbeddings()
-        self.index_name = "chatbot"
-        self.pc = PineconeClient(api_key=PINECONE_API_KEY)
+            # Initialize embeddings and vector store
+            self.embeddings = HuggingFaceEmbeddings()
+            self.index_name = "chatbot"
+            self.pc = PineconeClient(api_key=PINECONE_API_KEY)
 
-        # Create Pinecone index if not exists
-        if self.index_name not in self.pc.list_indexes().names():
-            logging.debug(f"Creating Pinecone index: {self.index_name}")
-            self.pc.create_index(
-                name=self.index_name,
-                dimension=768,
-                metric='cosine',
-                spec=ServerlessSpec(cloud='aws', region='us-east-1')
+            # Create Pinecone index if not exists
+            if self.index_name not in self.pc.list_indexes().names():
+                logging.debug(f"Creating Pinecone index: {self.index_name}")
+                self.pc.create_index(
+                    name=self.index_name,
+                    dimension=768,
+                    metric='cosine',
+                    spec=ServerlessSpec(cloud='aws', region='us-east-1')
+                )
+
+            # Populate the vector store
+            self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
+
+            # Initialize Hugging Face LLM
+            repo_id = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+            self.llm = HuggingFaceEndpoint(
+                repo_id=repo_id,
+                temperature=0.8,
+                top_k=50,
+                huggingfacehub_api_token=HUGGINGFACE_API_KEY
+            )
+            logging.debug("HuggingFace LLM initialized.")
+
+            # Define prompt template
+            template = """
+            Given the context below, answer the question. Be as precise as possible and provide detailed information from the context if available.
+
+            Context: {context}
+
+            Question: {question}
+
+            Answer:
+            """
+            self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
+
+            # Define RAG chain
+            self.rag_chain = (
+                {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
+                | self.prompt
+                | self.llm
+                | StrOutputParser()
             )
 
-        # Populate the vector store
-        self.docsearch = Pinecone.from_documents(self.docs, self.embeddings, index_name=self.index_name)
-
-        # Initialize Hugging Face LLM
-        repo_id = "mistralai/Mixtral-8x7B-Instruct-v0.1"
-        self.llm = HuggingFaceEndpoint(
-            repo_id=repo_id,
-            temperature=0.8,
-            top_k=50,
-            huggingfacehub_api_token=HUGGINGFACE_API_KEY
-        )
-        logging.debug("HuggingFace LLM initialized.")
-
-        # Define prompt template
-        template = """
-        Given the context below, answer the question. Be as precise as possible and provide detailed information from the context if available.
-
-        Context: {context}
-
-        Question: {question}
-
-        Answer:
-        """
-        self.prompt = PromptTemplate(template=template, input_variables=["context", "question"])
-
-        # Define RAG chain
-        self.rag_chain = (
-            {"context": self.docsearch.as_retriever(), "question": RunnablePassthrough()}
-            | self.prompt
-            | self.llm
-            | StrOutputParser()
-        )
+        except Exception as e:
+            logging.error(f"Error during chatbot initialization: {e}")
+            raise
 
     def ask(self, question):
         logging.debug(f"Asking question: {question}")
-        response = self.rag_chain.invoke(question)
-        logging.debug(f"Response: {response}")
-        return response
+        try:
+            response = self.rag_chain.invoke(question)
+            logging.debug(f"Response: {response}")
+            return response
+        except Exception as e:
+            logging.error(f"Error during chatbot response generation: {e}")
+            raise
 
 
 @st.cache_resource
